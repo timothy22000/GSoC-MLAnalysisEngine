@@ -1,51 +1,60 @@
-import com.cedarsoftware.util.io.JsonWriter;
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.log4j.spi.LoggerFactory;
-import org.slf4j.Logger;
+import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.function.FlatMapFunction;
+import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.streaming.Duration;
+import org.apache.spark.streaming.api.java.JavaDStream;
+import org.apache.spark.streaming.api.java.JavaPairDStream;
+import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
+import org.apache.spark.streaming.api.java.JavaStreamingContext;
+import org.apache.spark.streaming.kafka.KafkaUtils;
+import scala.Tuple2;
 
 import java.util.Arrays;
-import java.util.Date;
-import java.util.Random;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 
 public class Main {
-    private static final Logger logger = org.slf4j.LoggerFactory.getLogger(Main.class);
+
+    /**
+     * Consumes messages from one or more topics in Kafka and does KMeans clustering.
+     *
+     * Usage:  Main <zkQuorum> <group> <topics> <numThreads>
+     *   <zkQuorum> is a list of one or more zookeeper servers that make quorum
+     *   <group> is the name of kafka consumer group
+     *   <topics> is a list of one or more kafka topics to consume from
+     *   <numThreads> is the number of threads the kafka consumer should use
+     */
 
     public static void main(String[] args) {
-        Random random = new Random();
+        KafkaProducerConsumerRunner kafkaProducerConsumerRunner = new KafkaProducerConsumerRunner();
+//        kafkaProducerConsumerRunner.testRun();
 
-        ProducerExample producerExample = new ProducerExample();
-        Producer producer = producerExample.getProducer();
-
-        ConsumerExample consumerExample = new ConsumerExample();
-        Consumer consumer = consumerExample.getConsumer();
-
-        consumer.subscribe(Arrays.asList("test-topic-2", "logstash_logs"));
-
-        for(int i = 0; i < 100; i++) {
-            producer.send(new ProducerRecord<String, String>("test-topic", Integer.toString(i), Integer.toString(i)));
-
-            long runtime = new Date().getTime();
-            String ip = "192.168.2." + random.nextInt(255);
-            String msg = runtime + ",www.example.com," + ip;
-
-            producer.send(new ProducerRecord<String, String>("test-topic-2", ip, msg));
+        if (args.length < 4) {
+            System.err.println("Usage: Main <zkQuorum> <group> <topics> <numThreads>");
+            System.exit(1);
         }
 
-        producer.close();
 
-        while (true) {
-            ConsumerRecords<String, String> records = consumer.poll(100);
-            for (ConsumerRecord<String, String> record : records) {
-//                System.out.printf("offset = %d, topic = %s, key = %s, value = %s", record.offset(), record.topic(), record.key(), record.value());
-                String niceFormattedJson = JsonWriter.formatJson(record.value());
-                System.out.println(niceFormattedJson);
-            }
+        SparkConf sparkConf = new SparkConf().setAppName("JavaKafkaSparkStreaming");
+        // Create the context with 2 seconds batch size
+        JavaStreamingContext javaStreamingContext = new JavaStreamingContext(sparkConf, new Duration(2000));
 
+        int numThreads = Integer.parseInt(args[3]);
+        Map<String, Integer> topicMap = new HashMap<>();
+
+        String[] topics = args[2].split(",");
+        for (String topic: topics) {
+            topicMap.put(topic, numThreads);
         }
+
+        JavaPairReceiverInputDStream<String, String> messages =
+                KafkaUtils.createStream(javaStreamingContext, args[0], args[1], topicMap);
+
+        javaStreamingContext.start();
+        javaStreamingContext.awaitTermination();
 
     }
 }
