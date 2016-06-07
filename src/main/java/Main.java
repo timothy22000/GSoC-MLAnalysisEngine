@@ -54,6 +54,8 @@ public class Main {
         JavaPairReceiverInputDStream<String, String> messages =
                 KafkaUtils.createStream(javaStreamingContext, args[0], args[1], topicMap);
 
+	    //Transformation and actions for DStreams code here to a format that can be processed by Word2Vec to be able to run KMeans on
+
         javaStreamingContext.start();
         javaStreamingContext.awaitTermination();
 
