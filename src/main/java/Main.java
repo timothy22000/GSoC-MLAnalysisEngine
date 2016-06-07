@@ -37,8 +37,9 @@ public class Main {
             System.exit(1);
         }
 
+		// Spark master has to local[n] where n > 1 for receivers to receive data and processors to process data.
+        SparkConf sparkConf = new SparkConf().setMaster("local[2]").setAppName("JavaKafkaSparkStreaming");
 
-        SparkConf sparkConf = new SparkConf().setAppName("JavaKafkaSparkStreaming");
         // Create the context with 2 seconds batch size
         JavaStreamingContext javaStreamingContext = new JavaStreamingContext(sparkConf, new Duration(2000));
 
