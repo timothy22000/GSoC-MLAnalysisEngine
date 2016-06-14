@@ -131,17 +131,17 @@ Continuing on, you need the maven dependencies below for this application. (Shou
 	    <groupId>org.apache.spark</groupId>
 	    <artifactId>spark-mllib_2.10</artifactId>
 	    <version>1.3.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
-            <version>0.10.0.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-streaming-kafka_2.10</artifactId>
-            <version>1.6.1</version>
-        </dependency>
+	</dependency>
+	<dependency>
+	    <groupId>org.apache.kafka</groupId>
+	    <artifactId>kafka-clients</artifactId>
+	    <version>0.10.0.0</version>
+	</dependency>
+	<dependency>
+	    <groupId>org.apache.spark</groupId>
+	    <artifactId>spark-streaming-kafka_2.10</artifactId>
+	    <version>1.6.1</version>
+	</dependency>
 <dependencies>
 ```
 
