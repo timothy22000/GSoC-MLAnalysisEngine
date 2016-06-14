@@ -1,19 +1,20 @@
+import converter.JsonProcessor;
+import org.apache.log4j.Level;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.function.FlatMapFunction;
-import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.sql.DataFrame;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.Duration;
-import org.apache.spark.streaming.api.java.JavaDStream;
-import org.apache.spark.streaming.api.java.JavaPairDStream;
+import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
-import scala.Tuple2;
 
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 public class Main {
@@ -43,6 +44,9 @@ public class Main {
         // Create the context with 2 seconds batch size
         JavaStreamingContext javaStreamingContext = new JavaStreamingContext(sparkConf, new Duration(2000));
 
+	    //Only output error logs.
+	    LogManager.getRootLogger().setLevel(Level.ERROR);
+
         int numThreads = Integer.parseInt(args[3]);
         Map<String, Integer> topicMap = new HashMap<>();
 
@@ -55,6 +59,47 @@ public class Main {
                 KafkaUtils.createStream(javaStreamingContext, args[0], args[1], topicMap);
 
 	    //Transformation and actions for DStreams code here to a format that can be processed by Word2Vec to be able to run KMeans on
+
+	    messages.window(Durations.seconds(10));
+
+	    messages.foreachRDD(stringStringJavaPairRDD -> {
+		    SQLContext sqlContext = SQLContext.getOrCreate(stringStringJavaPairRDD.context());
+
+		    JsonProcessor jsonProcessor = new JsonProcessor();
+
+		    //Using this processing to obtain nested fields in JSON
+//		    List<Map<String, String>> mapsOfFlattenJsonObjects = stringStringJavaPairRDD.values().map(s -> {
+//			    return jsonProcessor.parseJson(s);
+//		    }).reduce(new Function2<List<Map<String, String>>, List<Map<String, String>>, List<Map<String, String>>>() {
+//			              @Override
+//			              public List<Map<String, String>> call(List<Map<String, String>> maps, List<Map<String, String>> maps2) throws Exception {
+//				              maps.addAll(maps2);
+//				              return maps;
+//			              }
+//		              }
+//
+//		    );
+
+		    DataFrame logs = sqlContext.read().json(stringStringJavaPairRDD.values());
+
+		    //Allows use of SQL commands
+		    logs.registerTempTable("logs");
+		    logs.printSchema();
+		    logs.show();
+
+		    //Extracting nested city name from geoip column only if table has entries.
+		    if(logs.count() > 0) {
+			    DataFrame geoIpCityName = sqlContext.sql("SELECT geoip.city_name FROM logs");
+
+			    geoIpCityName.show();
+		    }
+
+		    /**
+		     * Converting categorical features to numerical features due to how kmeans work
+		     */
+
+
+	    });
 
         javaStreamingContext.start();
         javaStreamingContext.awaitTermination();

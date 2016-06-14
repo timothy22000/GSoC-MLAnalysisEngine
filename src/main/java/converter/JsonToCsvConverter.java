@@ -12,11 +12,17 @@ public class JsonToCsvConverter {
 		this.csvOutputWriter = csvOutputWriter;
 	}
 
+	public String createCsvString(String jsonString) throws Exception {
+		List<Map<String, String>> flatJson =jsonProcessor.parseJson(jsonString);
+
+		return csvOutputWriter.writeAsCsvString(flatJson);
+	}
+
 	public String createCsvFile(String jsonString) throws Exception {
 		List<Map<String, String>> flatJson =jsonProcessor.parseJson(jsonString);
 
 		String fileName = "test.csv";
-		csvOutputWriter.writeAsCSV(flatJson, fileName);
+		csvOutputWriter.writeAsCsvFile(flatJson, fileName);
 
 		return fileName;
 	}

@@ -14,7 +14,7 @@ import java.util.TreeSet;
 
 public class CsvOutputWriter {
 
-	public String writeAsCsvString(List<Map<String, String>> flatJson, String fileName) throws FileNotFoundException {
+	public String writeAsCsvString(List<Map<String, String>> flatJson) throws FileNotFoundException {
 		Set<String> headers = collectHeaders(flatJson);
 		String output = StringUtils.join(headers.toArray(), ",") + "\n";
 		for (Map<String, String> map : flatJson) {
