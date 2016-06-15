@@ -16,9 +16,11 @@ Install brew package manager following the steps on the main website: [Brew](htt
 
 Then run the commands (should be obvious what is being installed) :
 
-	```brew install elasticsearch```
-	```brew install logstash```
-	```brew install kibana```
+	```
+	brew install elasticsearch
+	brew install logstash
+	brew install kibana
+	```
 
 Alternatively, you can download them from their respective websites.
 * [Elasticsearch] (https://www.elastic.co/downloads/elasticsearch)
