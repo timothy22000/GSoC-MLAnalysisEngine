@@ -5,6 +5,12 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.VoidFunction;
+import org.apache.spark.ml.Pipeline;
+import org.apache.spark.ml.PipelineModel;
+import org.apache.spark.ml.PipelineStage;
+import org.apache.spark.ml.feature.StringIndexer;
+import org.apache.spark.ml.feature.StringIndexerModel;
+import org.apache.spark.ml.feature.VectorAssembler;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.Duration;
@@ -17,6 +23,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+
+import static org.apache.spark.sql.types.DataTypes.DoubleType;
 
 public class Main {
 
@@ -119,78 +127,60 @@ public class Main {
 
 			    }
 
+			    //Ensure that there is entries in the table.
+			    if(logs.count() > 0) {
+				    DataFrame logsForProcessing = sqlContext.sql("SELECT geoip.city_name, verb, response, request FROM logs");
+
+				    DataFrame logsForProcessingFixed = logsForProcessing.withColumn("response", logs.col("response").cast(DoubleType));
+
+				    DataFrame logsForProcessingRemoveNulls = logsForProcessingFixed.na().drop();
+
+				    logsForProcessingRemoveNulls.printSchema();
+				    logsForProcessingRemoveNulls.show();
+
+				    /**
+				     * Converting categorical features to numerical features due to how kmeans work.
+				     *
+				     */
+
+				    StringIndexer requestIndex = new StringIndexer().setInputCol("request").setOutputCol("requestIndex");
+	//			    OneHotEncoder oneHotEncoderRequest = new OneHotEncoder().setInputCol("requestIndex").setOutputCol("requestVec");
+
+
+				    StringIndexer verbIndex = new StringIndexer().setInputCol("verb").setOutputCol("verbIndex");
+
+
+				    //Looks like there is a problem when using geoip
+				    StringIndexer geoIpCityNameIndex = new StringIndexer().setInputCol("city_name").setOutputCol("geoIpCityNameIndex");
+
+				    VectorAssembler assembler = new VectorAssembler()
+						    .setInputCols(
+								    new String[]{"response", "requestIndex", "verbIndex", "geoIpCityNameIndex"}
+						    ).setOutputCol("features");
+
+
+	//			    Normalizer normalizer = new Normalizer().setInputCol("features").setOutputCol("features_normalized").setP(1);
+
+	//			    DataFrame logsWithFeaturesNormalized = normalizer.transform(logsWithFeatures);
+	//			    logsWithFeaturesNormalized.show();
+
+				    org.apache.spark.ml.clustering.KMeans kmeans = new org.apache.spark.ml.clustering.KMeans()
+						    .setK(3)
+						    .setFeaturesCol("features")
+						    .setPredictionCol("prediction");
+
+				    Pipeline pipeline = new Pipeline()
+						    .setStages(new PipelineStage[]{requestIndex, verbIndex, geoIpCityNameIndex, assembler, kmeans});
+
+				    PipelineModel pipelineModel = pipeline.fit(logsForProcessingRemoveNulls);
+
+				    DataFrame logsWithFeatures = pipelineModel.transform(logsForProcessingRemoveNulls);
+
+				    logsWithFeatures.show();
+
 		    }
 
-	    });
-
-//	    messages.foreachRDD(stringStringJavaPairRDD -> {
-//		    if(!stringStringJavaPairRDD.values().isEmpty()){
-//
-//			    DataFrame streamLog = sqlContext.read().json(stringStringJavaPairRDD.values());
-//
-//			    streamLog.show();
-//
-//			    streamLog.insertInto("logs");
-//
-//			    logs.show();
-//
-//		    }
-
-//		    //Extracting nested city name from geoip column only if table has entries.
-//		    if(logs.count() > 0) {
-//			    DataFrame logsForProcessing = sqlContext.sql("SELECT geoip.city_name, verb, response, request FROM logs");
-//
-//			    logsForProcessing.printSchema();
-//			    logsForProcessing.show();
-//
-//			    DataFrame logsForProcessingFixed = logsForProcessing.withColumn("response", logs.col("response").cast(DoubleType));
-//
-//			    logsForProcessingFixed.printSchema();
-//			    logsForProcessingFixed.show();
-//
-//			    /**
-//			     * Converting categorical features to numerical features due to how kmeans work.
-//			     * (might be more helpful for classification) Try using Word2Vec.
-//			     */
-//
-//			    StringIndexer requestIndex = new StringIndexer().setInputCol("request").setOutputCol("requestIndex");
-////			    OneHotEncoder oneHotEncoderRequest = new OneHotEncoder().setInputCol("requestIndex").setOutputCol("requestVec");
-//
-////
-////			    StringIndexer verbIndex = new StringIndexer().setInputCol("verb").setOutputCol("verbIndex");
-//
-//
-//			    //Looks like there is a problem when using geoip
-////			    StringIndexer geoIpCityNameIndex = new StringIndexer().setInputCol("city_name").setOutputCol("geoipCityNameIndex");
-////
-//
-//			    VectorAssembler assembler = new VectorAssembler()
-//					    .setInputCols(
-//							    new String[]{"response", "requestIndex"}
-//					    ).setOutputCol("features");
-//
-////			    Normalizer normalizer = new Normalizer().setInputCol("features").setOutputCol("features_normalized").setP(1);
-//
-////			    DataFrame logsWithFeaturesNormalized = normalizer.transform(logsWithFeatures);
-////			    logsWithFeaturesNormalized.show();
-//
-////			    org.apache.spark.ml.clustering.KMeans kmeans = new org.apache.spark.ml.clustering.KMeans()
-////					    .setK(2)
-////					    .setFeaturesCol("features")
-////					    .setPredictionCol("prediction");
-//
-//			    Pipeline pipeline = new Pipeline()
-//					    .setStages(new PipelineStage[]{requestIndex, assembler});
-//
-//			    PipelineModel pipelineModel = pipeline.fit(logsForProcessingFixed);
-//
-//			    DataFrame logsWithFeatures = pipelineModel.transform(logsForProcessingFixed);
-//
-//			    logsWithFeatures.show();
-//
-//		    }
-
-//	    });
+	    }});
 
 	    javaStreamingContext.start();
         javaStreamingContext.awaitTermination();
