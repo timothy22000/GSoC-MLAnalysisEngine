@@ -1,11 +1,11 @@
-import converter.JsonProcessor;
+import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.sql.DataFrame;
-import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.Durations;
@@ -13,11 +13,14 @@ import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class Main {
+
+	private static DataFrame globalLogs;
 
     /**
      * Consumes messages from one or more topics in Kafka and does KMeans clustering.
@@ -29,7 +32,7 @@ public class Main {
      *   <numThreads> is the number of threads the kafka consumer should use
      */
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         KafkaProducerConsumerRunner kafkaProducerConsumerRunner = new KafkaProducerConsumerRunner();
 //        kafkaProducerConsumerRunner.testRun();
 
@@ -41,8 +44,31 @@ public class Main {
 		// Spark master has to local[n] where n > 1 for receivers to receive data and processors to process data.
         SparkConf sparkConf = new SparkConf().setMaster("local[2]").setAppName("JavaKafkaSparkStreaming");
 
+	    JavaSparkContext sc = new JavaSparkContext(sparkConf);
+
         // Create the context with 2 seconds batch size
-        JavaStreamingContext javaStreamingContext = new JavaStreamingContext(sparkConf, new Duration(2000));
+        JavaStreamingContext javaStreamingContext = new JavaStreamingContext(sc, new Duration(2000));
+
+	    SQLContext sqlContext = new SQLContext(sc);
+
+	    //Infer schema from sample json that will be updated as new RDD comes in. Has to be one line JSON.
+		DataFrame logsSchema = sqlContext.read().json("./src/main/resources/schema.json");
+
+	    FileUtils.deleteDirectory(new File("./src/main/resources/logs.parquet"));
+
+	    logsSchema.write().parquet("./src/main/resources/logs.parquet");
+
+	    DataFrame logs = sqlContext.read().parquet("./src/main/resources/logs.parquet");
+
+	    //Allows use of SQL commands
+	    logsSchema.registerTempTable("accumulatingLogs");
+	    logs.cache();
+
+	    logs.registerTempTable("logs");
+	    logs.cache();
+
+	    globalLogs = logs;
+
 
 	    //Only output error logs.
 	    LogManager.getRootLogger().setLevel(Level.ERROR);
@@ -62,46 +88,117 @@ public class Main {
 
 	    messages.window(Durations.seconds(10));
 
-	    messages.foreachRDD(stringStringJavaPairRDD -> {
-		    SQLContext sqlContext = SQLContext.getOrCreate(stringStringJavaPairRDD.context());
+	    /**\
+	     * To Do Tonight:
+	     *
+	     * i) Alternatively, SparkSQL does not have INSERT INTO built into it. Use RDD to update the SQL table
+	     * with new data coming from streams then re-train non-streaming KMeans on that model. (There is problems with this approach
+	     * because
+	     *
+	     * Refer to this for idea:
+	     * http://stackoverflow.com/questions/36578936/spark-ml-stringindexer-different-labels-training-testing?rq=1
+	     *
+	     * ii) Process into DataFrame then find a way to switch columns into Vectors so that streaming KMeans can be trained on it
+	     *
+	     * iii) Figure out how to convert output from clustering back into categorical
+	     *
+	     */
 
-		    JsonProcessor jsonProcessor = new JsonProcessor();
+	    messages.foreachRDD(new VoidFunction<JavaPairRDD<String, String>>() {
+		    @Override
+		    public void call(JavaPairRDD<String, String> stringStringJavaPairRDD) throws Exception {
+			    if(!stringStringJavaPairRDD.values().isEmpty()){
 
-		    //Using this processing to obtain nested fields in JSON
-//		    List<Map<String, String>> mapsOfFlattenJsonObjects = stringStringJavaPairRDD.values().map(s -> {
-//			    return jsonProcessor.parseJson(s);
-//		    }).reduce(new Function2<List<Map<String, String>>, List<Map<String, String>>, List<Map<String, String>>>() {
-//			              @Override
-//			              public List<Map<String, String>> call(List<Map<String, String>> maps, List<Map<String, String>> maps2) throws Exception {
-//				              maps.addAll(maps2);
-//				              return maps;
-//			              }
-//		              }
-//
-//		    );
+				    DataFrame streamLog = sqlContext.read().json(stringStringJavaPairRDD.values());
 
-		    DataFrame logs = sqlContext.read().json(stringStringJavaPairRDD.values());
+				    globalLogs = globalLogs.unionAll(streamLog);
 
-		    //Allows use of SQL commands
-		    logs.registerTempTable("logs");
-		    logs.printSchema();
-		    logs.show();
+				    //Need to register the new accumulated logs temp table again. Otherwise global logs will have
+				    //a Spark exception Attempted to use BlockRDD at createStream at Main.java:85 after its blocks have been removed!
+				    //because you are overwriting globalLogs with a new DataFrame but you have not register it as a temp table yet
+				    globalLogs.registerTempTable("logs");
+				    globalLogs.cache();
 
-		    //Extracting nested city name from geoip column only if table has entries.
-		    if(logs.count() > 0) {
-			    DataFrame geoIpCityName = sqlContext.sql("SELECT geoip.city_name FROM logs");
+				    System.out.println(globalLogs.count());
 
-			    geoIpCityName.show();
+				    globalLogs.show();
+
+			    }
+
 		    }
-
-		    /**
-		     * Converting categorical features to numerical features due to how kmeans work
-		     */
-
 
 	    });
 
-        javaStreamingContext.start();
+//	    messages.foreachRDD(stringStringJavaPairRDD -> {
+//		    if(!stringStringJavaPairRDD.values().isEmpty()){
+//
+//			    DataFrame streamLog = sqlContext.read().json(stringStringJavaPairRDD.values());
+//
+//			    streamLog.show();
+//
+//			    streamLog.insertInto("logs");
+//
+//			    logs.show();
+//
+//		    }
+
+//		    //Extracting nested city name from geoip column only if table has entries.
+//		    if(logs.count() > 0) {
+//			    DataFrame logsForProcessing = sqlContext.sql("SELECT geoip.city_name, verb, response, request FROM logs");
+//
+//			    logsForProcessing.printSchema();
+//			    logsForProcessing.show();
+//
+//			    DataFrame logsForProcessingFixed = logsForProcessing.withColumn("response", logs.col("response").cast(DoubleType));
+//
+//			    logsForProcessingFixed.printSchema();
+//			    logsForProcessingFixed.show();
+//
+//			    /**
+//			     * Converting categorical features to numerical features due to how kmeans work.
+//			     * (might be more helpful for classification) Try using Word2Vec.
+//			     */
+//
+//			    StringIndexer requestIndex = new StringIndexer().setInputCol("request").setOutputCol("requestIndex");
+////			    OneHotEncoder oneHotEncoderRequest = new OneHotEncoder().setInputCol("requestIndex").setOutputCol("requestVec");
+//
+////
+////			    StringIndexer verbIndex = new StringIndexer().setInputCol("verb").setOutputCol("verbIndex");
+//
+//
+//			    //Looks like there is a problem when using geoip
+////			    StringIndexer geoIpCityNameIndex = new StringIndexer().setInputCol("city_name").setOutputCol("geoipCityNameIndex");
+////
+//
+//			    VectorAssembler assembler = new VectorAssembler()
+//					    .setInputCols(
+//							    new String[]{"response", "requestIndex"}
+//					    ).setOutputCol("features");
+//
+////			    Normalizer normalizer = new Normalizer().setInputCol("features").setOutputCol("features_normalized").setP(1);
+//
+////			    DataFrame logsWithFeaturesNormalized = normalizer.transform(logsWithFeatures);
+////			    logsWithFeaturesNormalized.show();
+//
+////			    org.apache.spark.ml.clustering.KMeans kmeans = new org.apache.spark.ml.clustering.KMeans()
+////					    .setK(2)
+////					    .setFeaturesCol("features")
+////					    .setPredictionCol("prediction");
+//
+//			    Pipeline pipeline = new Pipeline()
+//					    .setStages(new PipelineStage[]{requestIndex, assembler});
+//
+//			    PipelineModel pipelineModel = pipeline.fit(logsForProcessingFixed);
+//
+//			    DataFrame logsWithFeatures = pipelineModel.transform(logsForProcessingFixed);
+//
+//			    logsWithFeatures.show();
+//
+//		    }
+
+//	    });
+
+	    javaStreamingContext.start();
         javaStreamingContext.awaitTermination();
 
     }
