@@ -20,6 +20,11 @@ import java.util.Map;
 
 public class Main {
 
+	//Required to be able to update logs within an inner class (VoidFunction that is used in foreachRDD).
+	// Explanation here in a different context: http://stackoverflow.com/questions/1299837/cannot-refer-to-a-non-final-variable-inside-an-inner-class-defined-in-a-differen
+	// Java's implementation of closure is slightly different where after Main is done it will clear away the local variable
+	// so the variable inside the anonmymous inner class may reference to a non-existing variable which is why it needs to final
+	// In my scenario, I can't make it final since I need to update my SQL table as streaming data comes in.
 	private static DataFrame globalLogs;
 
     /**
@@ -52,23 +57,12 @@ public class Main {
 	    SQLContext sqlContext = new SQLContext(sc);
 
 	    //Infer schema from sample json that will be updated as new RDD comes in. Has to be one line JSON.
-		DataFrame logsSchema = sqlContext.read().json("./src/main/resources/schema.json");
-
-	    FileUtils.deleteDirectory(new File("./src/main/resources/logs.parquet"));
-
-	    logsSchema.write().parquet("./src/main/resources/logs.parquet");
-
-	    DataFrame logs = sqlContext.read().parquet("./src/main/resources/logs.parquet");
-
-	    //Allows use of SQL commands
-	    logsSchema.registerTempTable("accumulatingLogs");
-	    logs.cache();
+		DataFrame logs = sqlContext.read().json("./src/main/resources/schema.json");
 
 	    logs.registerTempTable("logs");
 	    logs.cache();
 
 	    globalLogs = logs;
-
 
 	    //Only output error logs.
 	    LogManager.getRootLogger().setLevel(Level.ERROR);
