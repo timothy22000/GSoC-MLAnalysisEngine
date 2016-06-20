@@ -1,25 +1,36 @@
-import org.apache.commons.io.FileUtils;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
 import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaDoubleRDD;
 import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.ml.Pipeline;
 import org.apache.spark.ml.PipelineModel;
 import org.apache.spark.ml.PipelineStage;
+import org.apache.spark.ml.clustering.KMeansModel;
+import org.apache.spark.ml.feature.IndexToString;
+import org.apache.spark.ml.feature.Normalizer;
 import org.apache.spark.ml.feature.StringIndexer;
-import org.apache.spark.ml.feature.StringIndexerModel;
 import org.apache.spark.ml.feature.VectorAssembler;
+import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics;
+import org.apache.spark.mllib.linalg.Vector;
+import org.apache.spark.mllib.linalg.Vectors;
+import org.apache.spark.mllib.regression.LabeledPoint;
+import org.apache.spark.mllib.regression.LinearRegressionModel;
+import org.apache.spark.mllib.regression.LinearRegressionWithSGD;
 import org.apache.spark.sql.DataFrame;
+import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
+import scala.Tuple2;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -34,6 +45,8 @@ public class Main {
 	// so the variable inside the anonmymous inner class may reference to a non-existing variable which is why it needs to final
 	// In my scenario, I can't make it final since I need to update my SQL table as streaming data comes in.
 	private static DataFrame globalLogs;
+
+	private static DataFrame clusterResults;
 
     /**
      * Consumes messages from one or more topics in Kafka and does KMeans clustering.
@@ -140,11 +153,17 @@ public class Main {
 
 				    /**
 				     * Converting categorical features to numerical features due to how kmeans work.
+				     * Two ways:
+				     * i) Index features that are categorical one by one with StringIndexer
+				     * ii) Combine all categorical feature into a single Vector and then use VectorIndexer
+				     *
+				     * (i) is preferred in the situation where different categorical features have different number of
+				     * categories (Ex: one having 2 categories and one having 100 categories).
 				     *
 				     */
 
 				    StringIndexer requestIndex = new StringIndexer().setInputCol("request").setOutputCol("requestIndex");
-	//			    OneHotEncoder oneHotEncoderRequest = new OneHotEncoder().setInputCol("requestIndex").setOutputCol("requestVec");
+				    //			    OneHotEncoder oneHotEncoderRequest = new OneHotEncoder().setInputCol("requestIndex").setOutputCol("requestVec");
 
 
 				    StringIndexer verbIndex = new StringIndexer().setInputCol("verb").setOutputCol("verbIndex");
@@ -158,26 +177,102 @@ public class Main {
 								    new String[]{"response", "requestIndex", "verbIndex", "geoIpCityNameIndex"}
 						    ).setOutputCol("features");
 
+				    Normalizer normalizer = new Normalizer().setInputCol("features").setOutputCol("features_normalized").setP(1);
 
-	//			    Normalizer normalizer = new Normalizer().setInputCol("features").setOutputCol("features_normalized").setP(1);
+				    //			    DataFrame logsWithFeaturesNormalized = normalizer.transform(logsWithFeatures);
+				    //			    logsWithFeaturesNormalized.show();
 
-	//			    DataFrame logsWithFeaturesNormalized = normalizer.transform(logsWithFeatures);
-	//			    logsWithFeaturesNormalized.show();
+				    IndexToString indexToString = new IndexToString().setInputCol("prediction").setOutputCol("predictionOri");
 
 				    org.apache.spark.ml.clustering.KMeans kmeans = new org.apache.spark.ml.clustering.KMeans()
 						    .setK(3)
 						    .setFeaturesCol("features")
-						    .setPredictionCol("prediction");
+						    .setPredictionCol("clusters");
 
 				    Pipeline pipeline = new Pipeline()
-						    .setStages(new PipelineStage[]{requestIndex, verbIndex, geoIpCityNameIndex, assembler, kmeans});
+						    .setStages(new PipelineStage[]{requestIndex, verbIndex, geoIpCityNameIndex, assembler});
 
 				    PipelineModel pipelineModel = pipeline.fit(logsForProcessingRemoveNulls);
 
 				    DataFrame logsWithFeatures = pipelineModel.transform(logsForProcessingRemoveNulls);
 
-				    logsWithFeatures.show();
+				    KMeansModel kmeansModel = kmeans.fit(logsWithFeatures);
+				    DataFrame logsAfterKMeans = kmeansModel.transform(logsWithFeatures);
 
+				    clusterResults = logsAfterKMeans;
+
+//				    logsAfterKMeans.printSchema();
+//				    logsAfterKMeans.show();
+
+				    //Filter rows that have been assigned to each clusters and run descriptive stats on it
+//				    logsAfterKMeans.filter("clusters = 0").show();
+//				    logsAfterKMeans.filter("clusters = 0").describe().show();
+//
+//				    logsAfterKMeans.filter("clusters = 1").show();
+//				    logsAfterKMeans.filter("clusters = 1").describe().show();
+
+				    for (Vector centre : kmeansModel.clusterCenters()) {
+//					    System.out.println(centre);
+				    }
+
+				    //Start classification analysis here.
+
+				    //Simple analysis with only one feature.
+				    JavaRDD<LabeledPoint> featureLabel = logsAfterKMeans.select(logsAfterKMeans.col("clusters").alias("label"), logsAfterKMeans.col("verbIndex"))
+						    .javaRDD().map(new Function<Row, LabeledPoint>() {
+							    @Override
+							    public LabeledPoint call(Row row) throws Exception {
+								    System.out.println("Label " + row.get(0));
+								    System.out.println("Features " + row.get(1));
+								    return new LabeledPoint( (double) ((Integer) row.get(0)).intValue(), Vectors.dense((double) row.get(1)));
+							    }
+			        });
+
+				    //Split 40% training data, 60% test data
+				    JavaRDD<LabeledPoint>[] splits =
+						    featureLabel.randomSplit(new double[]{0.4, 0.6}, 11L);
+				    JavaRDD<LabeledPoint> training = splits[0].cache();
+				    JavaRDD<LabeledPoint> test = splits[1];
+
+				    //More interesting complex analysis with two or more features.
+
+				    //Linear regression model settings
+
+				    int noOfIterations = 100;
+				    double stepSize = 0.00000001;
+
+
+				    //Train on full data for now. Can slice before doing the map to LabeledPoints
+				    LinearRegressionModel linearRegressionModel = LinearRegressionWithSGD.train(JavaRDD.toRDD(training), noOfIterations, stepSize);
+
+				    // Evaluate model on training examples and compute training error
+				    JavaRDD<Tuple2<Object, Object>> valuesAndPreds = test.map(
+						    new Function<LabeledPoint, Tuple2<Object, Object>>() {
+							    public Tuple2<Object, Object> call(LabeledPoint point) {
+								    double prediction = linearRegressionModel.predict(point.features());
+								    System.out.println("Prediction: " + prediction);
+								    return new Tuple2<Object, Object>(prediction, point.label());
+							    }
+						    }
+				    );
+
+//				    double MSE = new JavaDoubleRDD(valuesAndPreds.map(
+//						    new Function<Tuple2<Double, Double>, Object>() {
+//							    public Object call(Tuple2<Double, Double> pair) {
+//								    return Math.pow(pair._1() - pair._2(), 2.0);
+//							    }
+//						    }
+//				    ).rdd()).mean();
+//
+//				    System.out.println("training Mean Squared Error = " + MSE);
+
+				    //Evaluation step
+				    BinaryClassificationMetrics binaryClassificationMetrics = new BinaryClassificationMetrics(valuesAndPreds.rdd(), 0);
+
+				    JavaRDD<Tuple2<Object, Object>> roc = binaryClassificationMetrics.roc().toJavaRDD();
+
+				    System.out.println("ROC curve " + roc.toArray());
+				    System.out.println("ROC curve ?????" + binaryClassificationMetrics.areaUnderROC());
 		    }
 
 	    }});
