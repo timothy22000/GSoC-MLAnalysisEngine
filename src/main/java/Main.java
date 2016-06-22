@@ -1,3 +1,4 @@
+import examples.KafkaProducerConsumerRunner;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
 import org.apache.spark.SparkConf;
@@ -48,6 +49,8 @@ public class Main {
 
 	private static DataFrame clusterResults;
 
+	private static ClassificationProcessor classificationProcessor;
+
     /**
      * Consumes messages from one or more topics in Kafka and does KMeans clustering.
      *
@@ -60,12 +63,13 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         KafkaProducerConsumerRunner kafkaProducerConsumerRunner = new KafkaProducerConsumerRunner();
-//        kafkaProducerConsumerRunner.testRun();
 
         if (args.length < 4) {
             System.err.println("Usage: Main <zkQuorum> <group> <topics> <numThreads>");
             System.exit(1);
         }
+
+	    ClassificationProcessor classificationProcessor = new ClassificationProcessor(100, 000000001);
 
 		// Spark master has to local[n] where n > 1 for receivers to receive data and processors to process data.
         SparkConf sparkConf = new SparkConf().setMaster("local[2]").setAppName("JavaKafkaSparkStreaming");
@@ -215,70 +219,19 @@ public class Main {
 //					    System.out.println(centre);
 				    }
 
-				    //Start classification analysis here.
+				    if(clusterResults != null) {
+					    classificationProcessor.linearRegressionWithSGD(clusterResults);
+				    }
 
-				    //Simple analysis with only one feature.
-				    JavaRDD<LabeledPoint> featureLabel = logsAfterKMeans.select(logsAfterKMeans.col("clusters").alias("label"), logsAfterKMeans.col("verbIndex"))
-						    .javaRDD().map(new Function<Row, LabeledPoint>() {
-							    @Override
-							    public LabeledPoint call(Row row) throws Exception {
-								    System.out.println("Label " + row.get(0));
-								    System.out.println("Features " + row.get(1));
-								    return new LabeledPoint( (double) ((Integer) row.get(0)).intValue(), Vectors.dense((double) row.get(1)));
-							    }
-			        });
-
-				    //Split 40% training data, 60% test data
-				    JavaRDD<LabeledPoint>[] splits =
-						    featureLabel.randomSplit(new double[]{0.4, 0.6}, 11L);
-				    JavaRDD<LabeledPoint> training = splits[0].cache();
-				    JavaRDD<LabeledPoint> test = splits[1];
-
-				    //More interesting complex analysis with two or more features.
-
-				    //Linear regression model settings
-
-				    int noOfIterations = 100;
-				    double stepSize = 0.00000001;
-
-
-				    //Train on full data for now. Can slice before doing the map to LabeledPoints
-				    LinearRegressionModel linearRegressionModel = LinearRegressionWithSGD.train(JavaRDD.toRDD(training), noOfIterations, stepSize);
-
-				    // Evaluate model on training examples and compute training error
-				    JavaRDD<Tuple2<Object, Object>> valuesAndPreds = test.map(
-						    new Function<LabeledPoint, Tuple2<Object, Object>>() {
-							    public Tuple2<Object, Object> call(LabeledPoint point) {
-								    double prediction = linearRegressionModel.predict(point.features());
-								    System.out.println("Prediction: " + prediction);
-								    return new Tuple2<Object, Object>(prediction, point.label());
-							    }
-						    }
-				    );
-
-//				    double MSE = new JavaDoubleRDD(valuesAndPreds.map(
-//						    new Function<Tuple2<Double, Double>, Object>() {
-//							    public Object call(Tuple2<Double, Double> pair) {
-//								    return Math.pow(pair._1() - pair._2(), 2.0);
-//							    }
-//						    }
-//				    ).rdd()).mean();
-//
-//				    System.out.println("training Mean Squared Error = " + MSE);
-
-				    //Evaluation step
-				    BinaryClassificationMetrics binaryClassificationMetrics = new BinaryClassificationMetrics(valuesAndPreds.rdd(), 0);
-
-				    JavaRDD<Tuple2<Object, Object>> roc = binaryClassificationMetrics.roc().toJavaRDD();
-
-				    System.out.println("ROC curve " + roc.toArray());
-				    System.out.println("ROC curve ?????" + binaryClassificationMetrics.areaUnderROC());
 		    }
 
 	    }});
+
 
 	    javaStreamingContext.start();
         javaStreamingContext.awaitTermination();
 
     }
+
+
 }

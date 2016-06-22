@@ -1,3 +1,5 @@
+package examples;
+
 import com.cedarsoftware.util.io.JsonWriter;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
