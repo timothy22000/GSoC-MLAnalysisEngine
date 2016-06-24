@@ -121,7 +121,7 @@ Sample apache server log file data (Ones that I am using while developing this a
 * https://download.elastic.co/demos/logstash/gettingstarted/logstash-tutorial.log.gz
 * redlug.com/logs/access.log
 
-You can test whether your configuration is working by running Kafka in the CLI and then running logstash with the configuration above. Logstash should start processing if a file that is specified in the logstash input is created or lines are appended to it. You should then see outputs on your Kafka consumer that is listening on the Kafka topic specified in the logtash output in the config file which in the case of the code snippet above is called ```logstash_logs```.
+You can test whether your configuration is working by running Kafka in the CLI and then running logstash with the configuration above. Logstash should start processing if a file that is specified in the logstash input is created or lines are appended to it (Note: You can delete the file and copy it into the folder that logstash is pointing at to trigger processing logstash to the application). You should then see outputs on your Kafka consumer that is listening on the Kafka topic specified in the logtash output in the config file which in the case of the code snippet above is called ```logstash_logs```.
 
 When you have the application running, the Kafka consumer in the application will consume the topic instead of a consumer that is running in the CLI.
 
