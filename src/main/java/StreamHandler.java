@@ -4,11 +4,9 @@ import org.apache.spark.ml.Pipeline;
 import org.apache.spark.ml.PipelineModel;
 import org.apache.spark.ml.PipelineStage;
 import org.apache.spark.ml.clustering.KMeansModel;
-import org.apache.spark.ml.feature.IndexToString;
 import org.apache.spark.ml.feature.Normalizer;
 import org.apache.spark.ml.feature.StringIndexer;
 import org.apache.spark.ml.feature.VectorAssembler;
-import org.apache.spark.mllib.linalg.Vector;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
@@ -23,10 +21,13 @@ public class StreamHandler {
 
 	private static ClassificationProcessor classificationProcessor;
 
+	private static ClusteringProcessor clusteringProcessor;
+
 	public void processStream(JavaPairReceiverInputDStream<String, String> messages, DataFrame logs, SQLContext sqlContext) {
 		globalLogs = logs;
 
 		classificationProcessor = new ClassificationProcessor(100, 000000001);
+		clusteringProcessor = new ClusteringProcessor(2, "features", "clusters");
 
 		/**
 		 * To Do Tonight:
@@ -92,13 +93,6 @@ public class StreamHandler {
 					//			    DataFrame logsWithFeaturesNormalized = normalizer.transform(logsWithFeatures);
 					//			    logsWithFeaturesNormalized.show();
 
-					IndexToString indexToString = new IndexToString().setInputCol("prediction").setOutputCol("predictionOri");
-
-					org.apache.spark.ml.clustering.KMeans kmeans = new org.apache.spark.ml.clustering.KMeans()
-							.setK(3)
-							.setFeaturesCol("features")
-							.setPredictionCol("clusters");
-
 					Pipeline pipeline = new Pipeline()
 							.setStages(new PipelineStage[]{requestIndex, verbIndex, geoIpCityNameIndex, assembler});
 
@@ -106,24 +100,12 @@ public class StreamHandler {
 
 					DataFrame logsWithFeatures = pipelineModel.transform(logsForProcessingRemoveNulls);
 
-					KMeansModel kmeansModel = kmeans.fit(logsWithFeatures);
-					DataFrame logsAfterKMeans = kmeansModel.transform(logsWithFeatures);
+					KMeansModel kmeansModel = clusteringProcessor.startKMeans(logsWithFeatures);
 
-					clusterResults = logsAfterKMeans;
+					clusterResults = clusteringProcessor.getClusterResults();
 
 //				    logsAfterKMeans.printSchema();
 //				    logsAfterKMeans.show();
-
-					//Filter rows that have been assigned to each clusters and run descriptive stats on it
-//				    logsAfterKMeans.filter("clusters = 0").show();
-//				    logsAfterKMeans.filter("clusters = 0").describe().show();
-//
-//				    logsAfterKMeans.filter("clusters = 1").show();
-//				    logsAfterKMeans.filter("clusters = 1").describe().show();
-
-					for (Vector centre : kmeansModel.clusterCenters()) {
-//					    System.out.println(centre);
-					}
 
 					if(clusterResults != null) {
 						classificationProcessor.linearRegressionWithSGD(clusterResults);
@@ -133,6 +115,8 @@ public class StreamHandler {
 
 			}});
 	}
+
+
 
 	private void createDataframeFromRdd(JavaPairRDD<String, String> stringStringJavaPairRDD, SQLContext sqlContext) {
 		if(!stringStringJavaPairRDD.values().isEmpty()){

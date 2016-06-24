@@ -2,52 +2,37 @@ import examples.KafkaProducerConsumerRunner;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
 import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.JavaDoubleRDD;
-import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.api.java.function.Function;
-import org.apache.spark.api.java.function.VoidFunction;
-import org.apache.spark.ml.Pipeline;
-import org.apache.spark.ml.PipelineModel;
-import org.apache.spark.ml.PipelineStage;
-import org.apache.spark.ml.clustering.KMeansModel;
-import org.apache.spark.ml.feature.IndexToString;
-import org.apache.spark.ml.feature.Normalizer;
-import org.apache.spark.ml.feature.StringIndexer;
-import org.apache.spark.ml.feature.VectorAssembler;
-import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics;
-import org.apache.spark.mllib.linalg.Vector;
-import org.apache.spark.mllib.linalg.Vectors;
-import org.apache.spark.mllib.regression.LabeledPoint;
-import org.apache.spark.mllib.regression.LinearRegressionModel;
-import org.apache.spark.mllib.regression.LinearRegressionWithSGD;
 import org.apache.spark.sql.DataFrame;
-import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
-import scala.Tuple2;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.apache.spark.sql.types.DataTypes.DoubleType;
-
 public class Main {
+	private static final int WINDOW_DURATION = 10;
+	private static final String APP_NAME = "JavaKafkaSparkStreaming";
+
+	// Spark master has to local[n] where n > 1 for receivers to receive data and processors to process data.
+	private static final String SPARK_MASTER = "local[2]";
+
+	private static final int BATCH_SIZE_MILLISECONDS = 2000;
+
+	private static final String TABLE_NAME = "logs";
+
+	private static final String SCHEMA_SOURCE = "./src/main/resources/schema.json";
 
 	//Required to be able to update logs within an inner class (VoidFunction that is used in foreachRDD).
 	// Explanation here in a different context: http://stackoverflow.com/questions/1299837/cannot-refer-to-a-non-final-variable-inside-an-inner-class-defined-in-a-differen
 	// Java's implementation of closure is slightly different where after Main is done it will clear away the local variable
 	// so the variable inside the anonmymous inner class may reference to a non-existing variable which is why it needs to final
 	// In my scenario, I can't make it final since I need to update my SQL table as streaming data comes in.
-
-
-	private static ClassificationProcessor classificationProcessor;
 
 	private static StreamHandler streamHandler;
     /**
@@ -68,39 +53,35 @@ public class Main {
             System.exit(1);
         }
 
-		// Spark master has to local[n] where n > 1 for receivers to receive data and processors to process data.
-        SparkConf sparkConf = new SparkConf().setMaster("local[2]").setAppName("JavaKafkaSparkStreaming");
+	    int numThreads = Integer.parseInt(args[3]);
+	    Map<String, Integer> topicMap = new HashMap<>();
+
+	    String[] topics = args[2].split(",");
+	    for (String topic: topics) {
+		    topicMap.put(topic, numThreads);
+	    }
+
+        SparkConf sparkConf = new SparkConf().setMaster(SPARK_MASTER).setAppName(APP_NAME);
 
 	    JavaSparkContext sc = new JavaSparkContext(sparkConf);
 
-        // Create the context with 2 seconds batch size
-        JavaStreamingContext javaStreamingContext = new JavaStreamingContext(sc, new Duration(2000));
+        JavaStreamingContext javaStreamingContext = new JavaStreamingContext(sc, new Duration(BATCH_SIZE_MILLISECONDS));
 
 	    SQLContext sqlContext = new SQLContext(sc);
 
-	    //Infer schema from sample json that will be updated as new RDD comes in. Has to be one line JSON.
-		DataFrame logs = sqlContext.read().json("./src/main/resources/schema.json");
+	    StreamHandler streamHandler = new StreamHandler();
 
-	    logs.registerTempTable("logs");
-	    logs.cache();
+	    DataFrame logs = setUpSchemaTableForLogs(sqlContext);
 
 	    //Only output error logs.
 	    LogManager.getRootLogger().setLevel(Level.ERROR);
-
-        int numThreads = Integer.parseInt(args[3]);
-        Map<String, Integer> topicMap = new HashMap<>();
-
-        String[] topics = args[2].split(",");
-        for (String topic: topics) {
-            topicMap.put(topic, numThreads);
-        }
 
         JavaPairReceiverInputDStream<String, String> messages =
                 KafkaUtils.createStream(javaStreamingContext, args[0], args[1], topicMap);
 
 	    //Transformation and actions for DStreams code here to a format that can be processed by Word2Vec to be able to run KMeans on
 
-	    messages.window(Durations.seconds(10));
+	    messages.window(Durations.seconds(WINDOW_DURATION));
 
 	    streamHandler.processStream(messages, logs, sqlContext);
 
@@ -109,5 +90,14 @@ public class Main {
 
     }
 
+	public static DataFrame setUpSchemaTableForLogs(SQLContext sqlContext) {
 
+		DataFrame logs = sqlContext.read().json(SCHEMA_SOURCE);
+
+		logs.registerTempTable(TABLE_NAME);
+		logs.cache();
+
+		return logs;
+
+	}
 }

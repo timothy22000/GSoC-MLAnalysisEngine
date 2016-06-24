@@ -43,26 +43,16 @@ public class ClassificationProcessor implements Serializable {
 		//More interesting complex analysis with two or more features.
 
 		//Train on full data for now. Can slice before doing the map to LabeledPoints
-		LinearRegressionModel linearRegressionModel = LinearRegressionWithSGD.train(JavaRDD.toRDD(training), noOfIterations, stepSize);
-
-		// Evaluate model on training examples and compute training error
-		JavaRDD<Tuple2<Object, Object>> valuesAndPreds = test.map(
-				new Function<LabeledPoint, Tuple2<Object, Object>>() {
-					public Tuple2<Object, Object> call(LabeledPoint point) {
-						double prediction = linearRegressionModel.predict(point.features());
-						System.out.println("Prediction: " + prediction);
-						return new Tuple2<Object, Object>(prediction, point.label());
-					}
-				}
+		LinearRegressionModel linearRegressionModel = LinearRegressionWithSGD.train(
+				JavaRDD.toRDD(training),
+				noOfIterations,
+				stepSize
 		);
 
-		double MSE = new JavaDoubleRDD(valuesAndPreds.map(
-				new Function<Tuple2<Object, Object>, Object>() {
-					public Object call(Tuple2<Object, Object> pair) {
-						return Math.pow(((double) pair._1()) - ((double) pair._2()), 2.0);
-					}
-				}
-		).rdd()).mean();
+		// Evaluate model on training examples and compute training error
+		JavaRDD<Tuple2<Object, Object>> valuesAndPreds = runKMeansOnTestData(test, linearRegressionModel);
+
+		double MSE = computeMeanSquaredError(valuesAndPreds);
 
 		System.out.println("Training Mean Squared Error = " + MSE);
 
@@ -75,8 +65,34 @@ public class ClassificationProcessor implements Serializable {
 		System.out.println("Area under ROC curve:" + binaryClassificationMetrics.areaUnderROC());
 	}
 
+	private JavaRDD<Tuple2<Object, Object>> runKMeansOnTestData(JavaRDD<LabeledPoint> test, final LinearRegressionModel linearRegressionModel) {
+		return test.map(
+					new Function<LabeledPoint, Tuple2<Object, Object>>() {
+						public Tuple2<Object, Object> call(LabeledPoint point) {
+							double prediction = linearRegressionModel.predict(point.features());
+							System.out.println("Prediction: " + prediction);
+							return new Tuple2<Object, Object>(prediction, point.label());
+						}
+					}
+			);
+	}
+
+	private double computeMeanSquaredError(JavaRDD<Tuple2<Object, Object>> valuesAndPreds) {
+
+		return new JavaDoubleRDD(valuesAndPreds.map(
+					new Function<Tuple2<Object, Object>, Object>() {
+						public Object call(Tuple2<Object, Object> pair) {
+							return Math.pow(((double) pair._1()) - ((double) pair._2()), 2.0);
+						}
+					}
+			).rdd()).mean();
+	}
+
 	private JavaRDD<LabeledPoint>[] splitData(JavaRDD<LabeledPoint> featureLabel, double trainingSplit, double testSplit, long seed) {
-		return featureLabel.randomSplit(new double[]{trainingSplit, testSplit}, seed);
+		return featureLabel.randomSplit(
+				new double[]{trainingSplit, testSplit},
+				seed
+		);
 	}
 
 }
