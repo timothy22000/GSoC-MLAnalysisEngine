@@ -1,19 +1,24 @@
 import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.ml.Pipeline;
 import org.apache.spark.ml.PipelineModel;
 import org.apache.spark.ml.PipelineStage;
 import org.apache.spark.ml.clustering.KMeansModel;
-import org.apache.spark.ml.feature.Normalizer;
 import org.apache.spark.ml.feature.StringIndexer;
 import org.apache.spark.ml.feature.VectorAssembler;
+import org.apache.spark.mllib.linalg.SparseVector;
 import org.apache.spark.sql.DataFrame;
+import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
+import scala.Tuple2;
+
+import java.io.Serializable;
 
 import static org.apache.spark.sql.types.DataTypes.DoubleType;
 
-public class StreamHandler {
+public class StreamHandler implements Serializable {
 
 	private static DataFrame globalLogs;
 
@@ -26,8 +31,8 @@ public class StreamHandler {
 	public void processStream(JavaPairReceiverInputDStream<String, String> messages, DataFrame logs, SQLContext sqlContext) {
 		globalLogs = logs;
 
-		classificationProcessor = new ClassificationProcessor(100, 000000001);
-		clusteringProcessor = new ClusteringProcessor(2, "features", "clusters");
+		classificationProcessor = new ClassificationProcessor(500, 0.0000000000000001);
+		clusteringProcessor = new ClusteringProcessor(3, "features", "clusters");
 
 		/**
 		 * To Do Tonight:
@@ -88,11 +93,6 @@ public class StreamHandler {
 									new String[]{"response", "requestIndex", "verbIndex", "geoIpCityNameIndex"}
 							).setOutputCol("features");
 
-					Normalizer normalizer = new Normalizer().setInputCol("features").setOutputCol("features_normalized").setP(1);
-
-					//			    DataFrame logsWithFeaturesNormalized = normalizer.transform(logsWithFeatures);
-					//			    logsWithFeaturesNormalized.show();
-
 					Pipeline pipeline = new Pipeline()
 							.setStages(new PipelineStage[]{requestIndex, verbIndex, geoIpCityNameIndex, assembler});
 
@@ -100,23 +100,61 @@ public class StreamHandler {
 
 					DataFrame logsWithFeatures = pipelineModel.transform(logsForProcessingRemoveNulls);
 
+					System.out.println("Hello");
+
+					logsWithFeatures.javaRDD().foreach(new VoidFunction<Row>() {
+						@Override
+						public void call(Row row) throws Exception {
+							row.schema();
+							System.out.println(row);
+							System.out.println(row.get(7));
+							System.out.println(((SparseVector) row.get(7)).toDense());
+						}
+					});
+
+					System.out.println("Boo");
+
 					KMeansModel kmeansModel = clusteringProcessor.startKMeans(logsWithFeatures);
 
 					clusterResults = clusteringProcessor.getClusterResults();
 
-//				    logsAfterKMeans.printSchema();
-//				    logsAfterKMeans.show();
+					/**
+					 *
+					 */
+//					StandardScaler standardScaler = new StandardScaler()
+//							.setWithMean(true)
+//							.setWithStd(true)
+//							.setInputCol("features")
+//							.setOutputCol("featuresScaled");
+//
+//					StandardScalerModel standardScalerModel = standardScaler.fit(clusterResults);
+//
+//					DataFrame scaledLogsAfterKMeans = standardScalerModel.transform(clusterResults);
+
+//					scaledLogsAfterKMeans.printSchema();
+//					scaledLogsAfterKMeans.show();
+
+				    clusterResults.printSchema();
+				    clusterResults.show();
 
 					if(clusterResults != null) {
-						classificationProcessor.linearRegressionWithSGD(clusterResults);
+						JavaRDD<Tuple2<Object, Object>>  valueAndPreds = classificationProcessor.linearRegressionWithSdgSimple(clusterResults);
+						classificationProcessor.computeMeanSquaredError(valueAndPreds);
+						classificationProcessor.evaluateRoc(valueAndPreds);
+
+						/**
+						 * Complex analysis work in progress
+						 */
+
+//						JavaRDD<Tuple2<Object, Object>> valueAndPredsComplex = classificationProcessor.linearRegressionWithSdgComplex(clusterResults);
+//						classificationProcessor.computeMeanSquaredError(valueAndPredsComplex);
+//						classificationProcessor.evaluateRoc(valueAndPredsComplex);
 					}
 
 				}
 
 			}});
 	}
-
-
 
 	private void createDataframeFromRdd(JavaPairRDD<String, String> stringStringJavaPairRDD, SQLContext sqlContext) {
 		if(!stringStringJavaPairRDD.values().isEmpty()){

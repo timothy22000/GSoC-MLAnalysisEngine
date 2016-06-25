@@ -27,7 +27,6 @@ public class ClusteringProcessor {
 
 	public KMeansModel startKMeans(DataFrame logsWithFeatures) {
 
-
 		kmeansModel = kmeans.fit(logsWithFeatures);
 		DataFrame logsAfterKMeans = kmeansModel.transform(logsWithFeatures);
 

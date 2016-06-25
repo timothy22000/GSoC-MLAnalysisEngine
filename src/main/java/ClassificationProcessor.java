@@ -1,8 +1,11 @@
 import org.apache.spark.api.java.JavaDoubleRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.ml.feature.StandardScaler;
+import org.apache.spark.ml.regression.LinearRegression;
 import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics;
 import org.apache.spark.mllib.linalg.Vectors;
+import org.apache.spark.mllib.regression.GeneralizedLinearAlgorithm;
 import org.apache.spark.mllib.regression.LabeledPoint;
 import org.apache.spark.mllib.regression.LinearRegressionModel;
 import org.apache.spark.mllib.regression.LinearRegressionWithSGD;
@@ -18,12 +21,13 @@ public class ClassificationProcessor implements Serializable {
 	private int noOfIterations;
 	private double stepSize;
 
+
 	public ClassificationProcessor(int noOfIterations, double stepSize) {
 		this.noOfIterations = checkNotNull(noOfIterations);
 		this.stepSize = checkNotNull(stepSize);
 	}
 
-	public void linearRegressionWithSGD(DataFrame logsAfterKMeans) {
+	public JavaRDD<Tuple2<Object, Object>> linearRegressionWithSdgSimple(DataFrame logsAfterKMeans) {
 		//Simple analysis with only one feature.
 		JavaRDD<LabeledPoint> featureLabel = logsAfterKMeans.select(logsAfterKMeans.col("clusters").alias("label"), logsAfterKMeans.col("verbIndex"))
 				.javaRDD().map(new Function<Row, LabeledPoint>() {
@@ -52,10 +56,60 @@ public class ClassificationProcessor implements Serializable {
 		// Evaluate model on training examples and compute training error
 		JavaRDD<Tuple2<Object, Object>> valuesAndPreds = runKMeansOnTestData(test, linearRegressionModel);
 
-		double MSE = computeMeanSquaredError(valuesAndPreds);
+		return valuesAndPreds;
+	}
 
-		System.out.println("Training Mean Squared Error = " + MSE);
+	public JavaRDD<Tuple2<Object, Object>> linearRegressionWithSdgComplex(DataFrame logsAfterKMeans) {
 
+		JavaRDD<LabeledPoint> featureLabel = logsAfterKMeans.select(
+				logsAfterKMeans.col("clusters").alias("label"),
+				logsAfterKMeans.col("response"),
+				logsAfterKMeans.col("verbIndex"),
+				logsAfterKMeans.col("requestIndex")
+				)
+				.javaRDD().map(new Function<Row, LabeledPoint>() {
+					@Override
+					public LabeledPoint call(Row row) throws Exception {
+
+						System.out.println("Label " + row.get(0));
+						System.out.println("Features " + row.get(1) + " , "+ row.get(2) + " , " + row.get(3));
+						return new LabeledPoint(
+								(double) ((Integer) row.get(0)).intValue(),
+								Vectors.dense((double) row.get(1), (double) row.get(2), (double) row.get(3))
+						);
+					}
+				});
+
+		//Split 40% training data, 60% test data
+		JavaRDD<LabeledPoint>[] splits = splitData(featureLabel, 0.4, 0.6, 11L);
+		JavaRDD<LabeledPoint> training = splits[0].cache();
+		JavaRDD<LabeledPoint> test = splits[1];
+
+		//More interesting complex analysis with two or more features.
+
+		//Train on full data for now. Can slice before doing the map to LabeledPoints
+		LinearRegressionWithSGD linearRegression = new LinearRegressionWithSGD();
+
+		/**
+		 * If intercept is not set to true, it will take 0 as an intercept.
+		 * http://stackoverflow.com/questions/26259743/spark-mllib-linear-regression-model-intercept-is-always-0-0
+		 */
+
+		linearRegression.setIntercept(true);
+
+		LinearRegressionModel linearRegressionModel = linearRegression.train(
+				JavaRDD.toRDD(training),
+				noOfIterations,
+				stepSize
+		);
+
+		// Evaluate model on training examples and compute training error
+		JavaRDD<Tuple2<Object, Object>> valuesAndPreds = runKMeansOnTestData(test, linearRegressionModel);
+
+		return valuesAndPreds;
+	}
+
+	public JavaRDD<Tuple2<Object, Object>> evaluateRoc(JavaRDD<Tuple2<Object, Object>> valuesAndPreds) {
 		//Evaluation step
 		BinaryClassificationMetrics binaryClassificationMetrics = new BinaryClassificationMetrics(valuesAndPreds.rdd(), 0);
 
@@ -63,6 +117,8 @@ public class ClassificationProcessor implements Serializable {
 
 		System.out.println("ROC curve: " + roc.toArray());
 		System.out.println("Area under ROC curve:" + binaryClassificationMetrics.areaUnderROC());
+
+		return roc;
 	}
 
 	private JavaRDD<Tuple2<Object, Object>> runKMeansOnTestData(JavaRDD<LabeledPoint> test, final LinearRegressionModel linearRegressionModel) {
@@ -77,15 +133,19 @@ public class ClassificationProcessor implements Serializable {
 			);
 	}
 
-	private double computeMeanSquaredError(JavaRDD<Tuple2<Object, Object>> valuesAndPreds) {
+	public double computeMeanSquaredError(JavaRDD<Tuple2<Object, Object>> valuesAndPreds) {
 
-		return new JavaDoubleRDD(valuesAndPreds.map(
+		 double MSE = new JavaDoubleRDD(valuesAndPreds.map(
 					new Function<Tuple2<Object, Object>, Object>() {
 						public Object call(Tuple2<Object, Object> pair) {
 							return Math.pow(((double) pair._1()) - ((double) pair._2()), 2.0);
 						}
 					}
 			).rdd()).mean();
+
+		System.out.println("Training Mean Squared Error = " + MSE);
+
+		return MSE;
 	}
 
 	private JavaRDD<LabeledPoint>[] splitData(JavaRDD<LabeledPoint> featureLabel, double trainingSplit, double testSplit, long seed) {
