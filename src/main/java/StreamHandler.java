@@ -5,11 +5,10 @@ import org.apache.spark.ml.Pipeline;
 import org.apache.spark.ml.PipelineModel;
 import org.apache.spark.ml.PipelineStage;
 import org.apache.spark.ml.clustering.KMeansModel;
+import org.apache.spark.ml.feature.Normalizer;
 import org.apache.spark.ml.feature.StringIndexer;
 import org.apache.spark.ml.feature.VectorAssembler;
-import org.apache.spark.mllib.linalg.SparseVector;
 import org.apache.spark.sql.DataFrame;
-import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
 import scala.Tuple2;
@@ -31,7 +30,7 @@ public class StreamHandler implements Serializable {
 	public void processStream(JavaPairReceiverInputDStream<String, String> messages, DataFrame logs, SQLContext sqlContext) {
 		globalLogs = logs;
 
-		classificationProcessor = new ClassificationProcessor(500, 0.0000000000000001);
+		classificationProcessor = new ClassificationProcessor(10, 0.000000000000001);
 		clusteringProcessor = new ClusteringProcessor(3, "features", "clusters");
 
 		/**
@@ -64,8 +63,8 @@ public class StreamHandler implements Serializable {
 
 					DataFrame logsForProcessingRemoveNulls = logsForProcessingFixed.na().drop();
 
-					logsForProcessingRemoveNulls.printSchema();
-					logsForProcessingRemoveNulls.show();
+//					logsForProcessingRemoveNulls.printSchema();
+//					logsForProcessingRemoveNulls.show();
 
 					/**
 					 * Converting categorical features to numerical features due to how kmeans work.
@@ -84,9 +83,10 @@ public class StreamHandler implements Serializable {
 
 					StringIndexer verbIndex = new StringIndexer().setInputCol("verb").setOutputCol("verbIndex");
 
-
 					//Looks like there is a problem when using geoip
 					StringIndexer geoIpCityNameIndex = new StringIndexer().setInputCol("city_name").setOutputCol("geoIpCityNameIndex");
+
+					Normalizer normalizer = new Normalizer().setInputCol("features").setOutputCol("features_normalized");
 
 					VectorAssembler assembler = new VectorAssembler()
 							.setInputCols(
@@ -94,33 +94,39 @@ public class StreamHandler implements Serializable {
 							).setOutputCol("features");
 
 					Pipeline pipeline = new Pipeline()
-							.setStages(new PipelineStage[]{requestIndex, verbIndex, geoIpCityNameIndex, assembler});
+							.setStages(new PipelineStage[]{requestIndex, verbIndex, geoIpCityNameIndex, assembler, normalizer});
 
 					PipelineModel pipelineModel = pipeline.fit(logsForProcessingRemoveNulls);
 
 					DataFrame logsWithFeatures = pipelineModel.transform(logsForProcessingRemoveNulls);
 
-					System.out.println("Hello");
+					VectorAssembler assemblerForOneFeature = new VectorAssembler()
+							.setInputCols(
+									new String[]{"verbIndex"}
+							).setOutputCol("features");
 
-					logsWithFeatures.javaRDD().foreach(new VoidFunction<Row>() {
-						@Override
-						public void call(Row row) throws Exception {
-							row.schema();
-							System.out.println(row);
-							System.out.println(row.get(7));
-							System.out.println(((SparseVector) row.get(7)).toDense());
-						}
-					});
+					Pipeline pipelineSingleFeature = new Pipeline()
+							.setStages(new PipelineStage[]{verbIndex, assemblerForOneFeature, normalizer});
 
-					System.out.println("Boo");
+					PipelineModel pipelineModelSingleFeature = pipelineSingleFeature.fit(logsForProcessingRemoveNulls);
+
+					DataFrame logsWithSingleFeature = pipelineModelSingleFeature.transform(logsForProcessingRemoveNulls);
+
+//					logsWithFeatures.printSchema();
+//					logsWithFeatures.show();
+
+					logsWithSingleFeature.printSchema();
+					logsWithSingleFeature.show();
 
 					KMeansModel kmeansModel = clusteringProcessor.startKMeans(logsWithFeatures);
 
 					clusterResults = clusteringProcessor.getClusterResults();
 
-					/**
-					 *
-					 */
+//					KMeansModel kmeansModelSingleFeature = clusteringProcessor.startKMeans(logsWithSingleFeature);
+//
+//					clusterResults = clusteringProcessor.getClusterResults();
+
+
 //					StandardScaler standardScaler = new StandardScaler()
 //							.setWithMean(true)
 //							.setWithStd(true)
@@ -138,17 +144,49 @@ public class StreamHandler implements Serializable {
 				    clusterResults.show();
 
 					if(clusterResults != null) {
-						JavaRDD<Tuple2<Object, Object>>  valueAndPreds = classificationProcessor.linearRegressionWithSdgSimple(clusterResults);
-						classificationProcessor.computeMeanSquaredError(valueAndPreds);
-						classificationProcessor.evaluateRoc(valueAndPreds);
+						//Linear Regression Simple
+//						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLinearReg = classificationProcessor.linearRegressionWithSdgSimple(clusterResults);
+//						classificationProcessor.computeMeanSquaredError(valueAndPreds);
+//						classificationProcessor.evaluateRoc(valueAndPreds);
 
-						/**
-						 * Complex analysis work in progress
-						 */
-
-//						JavaRDD<Tuple2<Object, Object>> valueAndPredsComplex = classificationProcessor.linearRegressionWithSdgComplex(clusterResults);
+						//Linear Regression Complex
+//						JavaRDD<Tuple2<Object, Object>> valueAndPredsLinearRegComplex = classificationProcessor.linearRegressionWithSdgComplex(clusterResults);
 //						classificationProcessor.computeMeanSquaredError(valueAndPredsComplex);
 //						classificationProcessor.evaluateRoc(valueAndPredsComplex);
+
+						//Logistic Regression Simple
+						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticReg = classificationProcessor.logisticRegressionWithLgbtSimple(clusterResults);
+						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticReg);
+						classificationProcessor.evaluateRoc(valueAndPredsLogisticReg);
+						classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
+
+						//Logistic Regression Complex
+//						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticRegComplex = classificationProcessor.logisticRegressionWithLgbtComplex(clusterResults);
+//						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticRegComplex);
+//						classificationProcessor.evaluateRoc(valueAndPredsLogisticRegComplex);
+//						classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticRegComplex);
+
+						//Naive Bayes Simple
+//						JavaPairRDD<Double, Double> valueAndPredsNaiveBayesSimple = classificationProcessor.naiveBayesSimple(clusterResults);
+
+						//Naive Bayes Complex
+//						JavaPairRDD<Double, Double> valueAndPredsNaiveBayesComplex = classificationProcessor.naiveBayesComplex(clusterResults);
+
+
+						if(clusterResults.count() > 2) {
+							//Decision Tree Simple
+//							DataFrame valueAndPredsDecisionTreeSimple = classificationProcessor.decisionTreeSimple(clusterResults);
+//							classificationProcessor.evaluatePrecisionDecisionTrees(valueAndPredsDecisionTreeSimple);
+//							classificationProcessor.evaluateRecallDecisionTrees(valueAndPredsDecisionTreeSimple);
+
+							//Decision Tree Complex
+//							DataFrame valueAndPredsDecisionTreeComplex = classificationProcessor.decisionTreeComplex(clusterResults);
+////							classificationProcessor.evaluateAccuracyDecisionTrees(valueAndPredsDecisionTreeComplex);
+//							classificationProcessor.evaluatePrecisionDecisionTrees(valueAndPredsDecisionTreeComplex);
+//							classificationProcessor.evaluateRecallDecisionTrees(valueAndPredsDecisionTreeComplex);
+						}
+
+
 					}
 
 				}
