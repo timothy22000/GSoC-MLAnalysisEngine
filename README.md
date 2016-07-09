@@ -1,15 +1,14 @@
-# LogstashKafkaSparkStreamingMlibTest
 
-==========================
+# LogstashKafkaSparkStreamingMlibTest
 
 Note: You need Java 7 or higher, Scala 2 or higher and Gradle 2.0 or higher to run this application.
 
-# Setting up ELK 
+# Setting up ELK
 
-This guide is a good introduction to setting up ELK and have some examples for each of the different components in ELK 
+This guide is a good introduction to setting up ELK and have some examples for each of the different components in ELK
 if you are new to them:
 * [Complete guide to ELK by logz.io](http://logz.io/learn/complete-guide-elk-stack/)
-	
+
 For Mac Users, an easy way to set them up is using brew package manager to install Elasticsearch, Logstash and Kibana.
 
 Install brew package manager following the steps on the main website: [Brew](http://brew.sh/)
@@ -26,12 +25,12 @@ Alternatively, you can download them from their respective websites.
 * [Elasticsearch] (https://www.elastic.co/downloads/elasticsearch)
 * [Logstash] (https://www.elastic.co/downloads/logstash)
 * [Kibana] (https://www.elastic.co/downloads/kibana)
-	
+
 # Setting up Kafka
-Kafka is a distributed, partitioned, replicated commit log service. It provides the functionality of a messaging 
+Kafka is a distributed, partitioned, replicated commit log service. It provides the functionality of a messaging
 system, but with a unique design.
 
-For Mac Users, you can use ```brew install kafka``` to easily install Kafka. However, from my experience, the kafka formula on 
+For Mac Users, you can use ```brew install kafka``` to easily install Kafka. However, from my experience, the kafka formula on
 brew only contains core kafka and does not have kafka connect when I was setting it up.
 
 Alternatively, you can download it from its main website
@@ -55,7 +54,7 @@ http://kafka.apache.org/documentation.html#quickstart
 
 For Mac Users, you can use ```brew install apache-spark``` to easily install Spark.
 
-Alternatively, you can download it from: 
+Alternatively, you can download it from:
 * [Spark] (http://spark.apache.org/downloads.html)
 
 Quick start on Spark and to test your Spark installation:
@@ -63,7 +62,7 @@ http://spark.apache.org/docs/latest/quick-start.html
 
 # Application-specific settings
 
-Now on to a couple of configuration bits before you can make use of the application. 
+Now on to a couple of configuration bits before you can make use of the application.
 
 First, you need to set up a logstash configuration file that ingests log file data from a directory of your choosing into Kafka (the rest is then connected with Kafka and Spark Streaming). You can put this configuration anywhere you like but I personally put it under ```/etc/logstash/conf.d```
 
@@ -73,8 +72,8 @@ First, you need to set up a logstash configuration file that ingests log file da
 input {
     file {
         path => [ log_source_dir ]
-        start_position => beginning 
-        ignore_older => 0 
+        start_position => beginning
+        ignore_older => 0
         type => "apache-access"
     }
 }
@@ -150,12 +149,3 @@ Continuing on, you need the maven dependencies below for this application. (Shou
 Additional Notes:
 - You can set up your IDE (IntelliJ or Eclipse) to run a Spark application locally inside the IDE without packaging a uber jar:
 	* https://cwiki.apache.org/confluence/display/SPARK/Useful+Developer+Tools#UsefulDeveloperTools-IDESetup
-
-
-
-
-
-
-
-
-	
