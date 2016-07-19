@@ -155,10 +155,10 @@ public class StreamHandler implements Serializable {
 //						classificationProcessor.evaluateRoc(valueAndPredsComplex);
 
 						//Logistic Regression Simple
-						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticReg = classificationProcessor.logisticRegressionWithLgbtSimple(clusterResults);
-						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticReg);
-						classificationProcessor.evaluateRoc(valueAndPredsLogisticReg);
-						classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
+//						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticReg = classificationProcessor.logisticRegressionWithLgbtSimple(clusterResults);
+//						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticReg);
+//						classificationProcessor.evaluateRoc(valueAndPredsLogisticReg);
+//						classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
 
 						//Logistic Regression Complex
 //						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticRegComplex = classificationProcessor.logisticRegressionWithLgbtComplex(clusterResults);
@@ -175,15 +175,11 @@ public class StreamHandler implements Serializable {
 
 						if(clusterResults.count() > 2) {
 							//Decision Tree Simple
-//							DataFrame valueAndPredsDecisionTreeSimple = classificationProcessor.decisionTreeSimple(clusterResults);
-//							classificationProcessor.evaluatePrecisionDecisionTrees(valueAndPredsDecisionTreeSimple);
-//							classificationProcessor.evaluateRecallDecisionTrees(valueAndPredsDecisionTreeSimple);
+							JavaPairRDD<Double, Double> valueAndPredsDecisionTreeSimple = classificationProcessor.decisionTreeSimple(clusterResults);
 
-							//Decision Tree Complex
-//							DataFrame valueAndPredsDecisionTreeComplex = classificationProcessor.decisionTreeComplex(clusterResults);
-////							classificationProcessor.evaluateAccuracyDecisionTrees(valueAndPredsDecisionTreeComplex);
-//							classificationProcessor.evaluatePrecisionDecisionTrees(valueAndPredsDecisionTreeComplex);
-//							classificationProcessor.evaluateRecallDecisionTrees(valueAndPredsDecisionTreeComplex);
+//							Decision Tree Complex
+
+//							JavaPairRDD<Double, Double> valueAndPredsDecisionTreeComplex = classificationProcessor.decisionTreeComplex(clusterResults);
 						}
 
 

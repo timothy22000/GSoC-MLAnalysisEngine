@@ -24,6 +24,7 @@ import org.apache.spark.mllib.regression.LinearRegressionWithSGD;
 import org.apache.spark.mllib.tree.DecisionTree;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.Row;
+import org.codehaus.janino.Java;
 import scala.Tuple2;
 
 import java.io.Serializable;
@@ -345,85 +346,143 @@ public class ClassificationProcessor implements Serializable {
 	 * Non-linear method
 	 */
 
-	public DataFrame decisionTreeSimple(DataFrame logsAfterKMeans) {
+	public JavaPairRDD<Double, Double> decisionTreeSimple(DataFrame logsAfterKMeans) {
 
-		DataFrame logsAfterKMeansStringLabel = logsAfterKMeans.withColumn("clusters", logsAfterKMeans.col("clusters").cast(StringType));
+		JavaRDD<LabeledPoint> featureLabel = logsAfterKMeans.select(
+				logsAfterKMeans.col("clusters").alias("label"),
+				logsAfterKMeans.col("verbIndex")
+		)
+				.javaRDD().map(new Function<Row, LabeledPoint>() {
+					@Override
+					public LabeledPoint call(Row row) throws Exception {
 
-		/**
-		 * Workaround since the ML version of DT does not have a way to specify the number of classes and the exception
-		 * suggests the use of StringIndexer so I converted the labels to String and then index it to Double
-		 * rather than converting to Double directly.
-		 *
-		 * Exception: DecisionTreeClassifier was given input with invalid label column clusters, without the number
-		 * of classes specified. See StringIndexer.
-		 */
-
-		StringIndexer stringIndexer = new StringIndexer().setInputCol("clusters").setOutputCol("label");
-
-		StringIndexerModel stringIndexerModel = stringIndexer.fit(logsAfterKMeansStringLabel);
-
-		DataFrame logsAfterKMeansFixed = stringIndexerModel.transform(logsAfterKMeansStringLabel);
+						System.out.println("Label " + row.get(0));
+						System.out.println("Features " + row.get(1));
+						return new LabeledPoint(
+								(double) ((Integer) row.get(0)).intValue(),
+								Vectors.dense((double) row.get(1))
+						);
+					}
+				});
 
 		//Split 40% training data, 60% test data
-		DataFrame[] splits = logsAfterKMeansFixed.randomSplit(new double[]{40, 60}, 11L);
-		DataFrame training = splits[0].cache();
-		DataFrame test = splits[1];
+		JavaRDD<LabeledPoint>[] splits = splitData(featureLabel, 0.4, 0.6, 11L);
+		JavaRDD<LabeledPoint> training = splits[0].cache();
+		JavaRDD<LabeledPoint> test = splits[1];
 
-		DecisionTreeClassifier decisionTreeClassifier = new DecisionTreeClassifier()
-				.setLabelCol("label")
-				.setFeaturesCol("features");
+		// Set parameters.
+		//  Empty categoricalFeaturesInfo indicates all features are continuous.
+		Integer numClasses = 3;
+		Map<Integer, Integer> categoricalFeaturesInfo = new HashMap<Integer, Integer>();
+		String impurity = "gini";
+		Integer maxDepth = 10;
+		Integer maxBins = 1000;
 
-		//Train and fit model
-		DecisionTreeClassificationModel decisionTreeModel = decisionTreeClassifier.fit(training);
+		// Train a DecisionTree model for classification.
+		org.apache.spark.mllib.tree.model.DecisionTreeModel model = DecisionTree.trainClassifier(training, numClasses,
+				categoricalFeaturesInfo, impurity, maxDepth, maxBins);
 
-		DataFrame prediction = decisionTreeModel.transform(test);
+		// Evaluate model on test instances and compute test error
+		JavaPairRDD<Double, Double> valueAndPreds =
+				test.mapToPair(new PairFunction<LabeledPoint, Double, Double>() {
+					@Override
+					public Tuple2<Double, Double> call(LabeledPoint point) {
+						double prediction = model.predict(point.features());
+						System.out.println("Prediction " + prediction);
+						return new Tuple2<>(prediction, point.label());
+					}
+				});
 
-		prediction.select("prediction", "label", "features").show();
+		Double testError =
+				1.0 * valueAndPreds.filter(new Function<Tuple2<Double, Double>, Boolean>() {
+					@Override
+					public Boolean call(Tuple2<Double, Double> pl) {
+						return !pl._1().equals(pl._2());
+					}
+				}).count() / test.count();
 
-		prediction.select("prediction", "label", "features").where("label = 1").show();
+		Double accuracy =
+				1.0 * valueAndPreds.filter(new Function<Tuple2<Double, Double>, Boolean>() {
+					@Override
+					public Boolean call(Tuple2<Double, Double> pl) {
+						return pl._1().equals(pl._2());
+					}
+				}).count() / test.count();
 
-		return prediction;
+		System.out.println("Test Error: " + testError);
+		System.out.println("Accuracy: " + accuracy);
+
+		return valueAndPreds;
 
 	}
 
-	public DataFrame decisionTreeComplex(DataFrame logsAfterKMeans) {
+	public JavaPairRDD<Double, Double> decisionTreeComplex(DataFrame logsAfterKMeans) {
 
-		DataFrame logsAfterKMeansStringLabel = logsAfterKMeans.withColumn("clusters", logsAfterKMeans.col("clusters").cast(StringType));
+		JavaRDD<LabeledPoint> featureLabel = logsAfterKMeans.select(
+				logsAfterKMeans.col("clusters").alias("label"),
+				logsAfterKMeans.col("features")
+		)
+				.javaRDD().map(new Function<Row, LabeledPoint>() {
+					@Override
+					public LabeledPoint call(Row row) throws Exception {
 
-		/**
-		 * Workaround since the ML version of DT does not have a way to specify the number of classes and the exception
-		 * suggests the use of StringIndexer so I converted the labels to String and then index it to Double
-		 * rather than converting to Double directly.
-		 *
-		 * Exception: DecisionTreeClassifier was given input with invalid label column clusters, without the number
-		 * of classes specified. See StringIndexer.
-		 */
-
-		StringIndexer stringIndexer = new StringIndexer().setInputCol("clusters").setOutputCol("label");
-
-		StringIndexerModel stringIndexerModel = stringIndexer.fit(logsAfterKMeansStringLabel);
-
-		DataFrame logsAfterKMeansFixed = stringIndexerModel.transform(logsAfterKMeansStringLabel);
+						System.out.println("Label " + row.get(0));
+						System.out.println("Features " + row.get(1));
+						return new LabeledPoint(
+								(double) ((Integer) row.get(0)).intValue(),
+								(Vector) row.get(1)
+						);
+					}
+				});
 
 		//Split 40% training data, 60% test data
-		DataFrame[] splits = logsAfterKMeansFixed.randomSplit(new double[]{40, 60}, 11L);
-		DataFrame training = splits[0].cache();
-		DataFrame test = splits[1];
+		JavaRDD<LabeledPoint>[] splits = splitData(featureLabel, 0.4, 0.6, 11L);
+		JavaRDD<LabeledPoint> training = splits[0].cache();
+		JavaRDD<LabeledPoint> test = splits[1];
 
-		DecisionTreeClassifier decisionTreeClassifier = new DecisionTreeClassifier()
-				.setLabelCol("label")
-				.setFeaturesCol("features")
-				.setMaxBins(1000)
-				.setMaxDepth(10);
+		// Set parameters.
+		//  Empty categoricalFeaturesInfo indicates all features are continuous.
+		Integer numClasses = 3;
+		Map<Integer, Integer> categoricalFeaturesInfo = new HashMap<Integer, Integer>();
+		String impurity = "gini";
+		Integer maxDepth = 10;
+		Integer maxBins = 1000;
 
-		//Train and fit model
-		DecisionTreeClassificationModel decisionTreeModel = decisionTreeClassifier.fit(training);
+		// Train a DecisionTree model for classification.
+		 org.apache.spark.mllib.tree.model.DecisionTreeModel model = DecisionTree.trainClassifier(training, numClasses,
+				categoricalFeaturesInfo, impurity, maxDepth, maxBins);
 
-		DataFrame prediction = decisionTreeModel.transform(test);
+		// Evaluate model on test instances and compute test error
+		JavaPairRDD<Double, Double> valueAndPreds =
+				test.mapToPair(new PairFunction<LabeledPoint, Double, Double>() {
+					@Override
+					public Tuple2<Double, Double> call(LabeledPoint point) {
+						double prediction = model.predict(point.features());
+						System.out.println("Prediction " + prediction);
+						return new Tuple2<>(prediction, point.label());
+					}
+				});
 
-		prediction.select("prediction", "label", "features").show();
+		Double testError =
+				1.0 * valueAndPreds.filter(new Function<Tuple2<Double, Double>, Boolean>() {
+					@Override
+					public Boolean call(Tuple2<Double, Double> pl) {
+						return !pl._1().equals(pl._2());
+					}
+				}).count() / test.count();
 
-		return prediction;
+		Double accuracy =
+				1.0 * valueAndPreds.filter(new Function<Tuple2<Double, Double>, Boolean>() {
+					@Override
+					public Boolean call(Tuple2<Double, Double> pl) {
+						return pl._1().equals(pl._2());
+					}
+				}).count() / test.count();
+
+		System.out.println("Test Error: " + testError);
+		System.out.println("Accuracy: " + accuracy);
+
+		return valueAndPreds;
 
 	}
 
