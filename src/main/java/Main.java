@@ -1,15 +1,24 @@
 import examples.KafkaProducerConsumerRunner;
+import geocoder.Geocoder;
+import kafka.Kafka;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
 import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.Durations;
+import org.apache.spark.streaming.Time;
 import org.apache.spark.streaming.api.java.JavaPairReceiverInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.mortbay.util.ajax.JSON;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -27,6 +36,7 @@ public class Main {
 	private static final String TABLE_NAME = "logs";
 
 	private static final String SCHEMA_SOURCE = "./src/main/resources/schema.json";
+	private static final Geocoder geocoder = new Geocoder("AIzaSyBRxFmYNrT6kcJqOwWSa4MMwFpcBccIMAU");
 
 	//Required to be able to update logs within an inner class (VoidFunction that is used in foreachRDD).
 	// Explanation here in a different context: http://stackoverflow.com/questions/1299837/cannot-refer-to-a-non-final-variable-inside-an-inner-class-defined-in-a-differen
@@ -47,6 +57,7 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         KafkaProducerConsumerRunner kafkaProducerConsumerRunner = new KafkaProducerConsumerRunner();
+
 
         if (args.length < 4) {
             System.err.println("Usage: Main <zkQuorum> <group> <topics> <numThreads>");
@@ -83,7 +94,38 @@ public class Main {
 
 	    messages.window(Durations.seconds(WINDOW_DURATION));
 
-	    streamHandler.processStream(messages, logs, sqlContext);
+	    messages.foreachRDD(new Function2<JavaPairRDD<String, String>, Time, Void>() {
+		    @Override
+		    public Void call(JavaPairRDD<String, String> stringStringJavaPairRDD, Time time) throws Exception {
+			    stringStringJavaPairRDD.values().foreach(new VoidFunction<String>() {
+				    @Override
+				    public void call(String s) throws Exception {
+					    JSONObject jsonObject = new JSONObject(s);
+					    System.out.println(jsonObject);
+					    if(!jsonObject.isNull("geoip")) {
+						    JSONObject geoIpObject = jsonObject.getJSONObject("geoip");
+						    String cityName = "";
+						    String countryName = "";
+
+						    if(geoIpObject.has("city_name")) {
+							    cityName = geoIpObject.get("city_name").toString();
+						    }
+
+						    if(geoIpObject.has("country_name")) {
+							    countryName = geoIpObject.get("country_name").toString();
+						    }
+
+						    System.out.println(cityName);
+						    geocoder.geocode(cityName + ", " + countryName);
+					    }
+
+				    }
+			    });
+			    return null;
+		    }
+	    });
+
+//	    streamHandler.processStream(messages, logs, sqlContext);
 
 	    javaStreamingContext.start();
         javaStreamingContext.awaitTermination();

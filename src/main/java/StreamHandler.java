@@ -1,3 +1,4 @@
+import geocoder.Geocoder;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.VoidFunction;
@@ -32,6 +33,8 @@ public class StreamHandler implements Serializable {
 
 		classificationProcessor = new ClassificationProcessor(10, 0.000000000000001);
 		clusteringProcessor = new ClusteringProcessor(3, "features", "clusters");
+		Geocoder geocoder = new Geocoder("AIzaSyBRxFmYNrT6kcJqOwWSa4MMwFpcBccIMAU");
+//		sqlContext.udf().register("geocoding",  geocoder.geocode())
 
 		/**
 		 * To Do Tonight:
@@ -62,6 +65,7 @@ public class StreamHandler implements Serializable {
 					DataFrame logsForProcessingFixed = logsForProcessing.withColumn("response", globalLogs.col("response").cast(DoubleType));
 
 					DataFrame logsForProcessingRemoveNulls = logsForProcessingFixed.na().drop();
+
 
 //					logsForProcessingRemoveNulls.printSchema();
 //					logsForProcessingRemoveNulls.show();
