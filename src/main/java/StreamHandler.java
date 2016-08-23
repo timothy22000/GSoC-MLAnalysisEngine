@@ -263,6 +263,7 @@ public class StreamHandler implements Serializable {
 //
 //						ruleGenerator.generateRuleFile(fileName);
 
+
 						//Logistic Regression Complex
 						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticRegComplex = classificationProcessor.logisticRegressionWithLgbtComplex(clusterResults);
 						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticRegComplex);
@@ -284,15 +285,11 @@ public class StreamHandler implements Serializable {
 
 						if(clusterResults.count() > 2) {
 							//Decision Tree Simple
-//							DataFrame valueAndPredsDecisionTreeSimple = classificationProcessor.decisionTreeSimple(clusterResults);
-//							classificationProcessor.evaluatePrecisionDecisionTrees(valueAndPredsDecisionTreeSimple);
-//							classificationProcessor.evaluateRecallDecisionTrees(valueAndPredsDecisionTreeSimple);
+							JavaPairRDD<Double, Double> valueAndPredsDecisionTreeSimple = classificationProcessor.decisionTreeSimple(clusterResults);
 
-							//Decision Tree Complex
-//							DataFrame valueAndPredsDecisionTreeComplex = classificationProcessor.decisionTreeComplex(clusterResults);
-////							classificationProcessor.evaluateAccuracyDecisionTrees(valueAndPredsDecisionTreeComplex);
-//							classificationProcessor.evaluatePrecisionDecisionTrees(valueAndPredsDecisionTreeComplex);
-//							classificationProcessor.evaluateRecallDecisionTrees(valueAndPredsDecisionTreeComplex);
+//							Decision Tree Complex
+
+//							JavaPairRDD<Double, Double> valueAndPredsDecisionTreeComplex = classificationProcessor.decisionTreeComplex(clusterResults);
 						}
 
 
