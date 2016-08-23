@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -58,8 +59,11 @@ public class StreamHandler implements Serializable {
 
 	private static ClusteringProcessor clusteringProcessor;
 
+	private static String currentFileName;
+
 	private static Geocoder geocoder = new Geocoder("AIzaSyBRxFmYNrT6kcJqOwWSa4MMwFpcBccIMAU");
 
+	//See Google Guave's Loading Cache for more details.
 	private static LoadingCache<String, Optional<LatLng>> cache = CacheBuilder.newBuilder()
 			.maximumSize(500)
 			.expireAfterAccess(24, TimeUnit.HOURS)
@@ -75,6 +79,7 @@ public class StreamHandler implements Serializable {
 			);;
 
 
+	//UDF for Spark SQL
 	public double geocodeLat(String address) {
 		try {
 			Optional<LatLng> latLngOptional = cache.get(address);
@@ -89,6 +94,7 @@ public class StreamHandler implements Serializable {
 		return 0;
 	}
 
+	//UDF for Spark SQL
 	public double geocodeLong(String address) {
 		try {
 			Optional<LatLng> latLngOptional = cache.get(address);
@@ -112,18 +118,13 @@ public class StreamHandler implements Serializable {
 		sqlContext.udf().register("geocodeCityCountryLng",  (String string) -> geocodeLong(string), DataTypes.DoubleType);
 
 		/**
-		 * To Do Tonight:
-		 *
-		 * i) Alternatively, SparkSQL does not have INSERT INTO built into it. Use RDD to update the SQL table
-		 * with new data coming from streams then re-train non-streaming KMeans on that model. (There is problems with this approach
-		 * because
-		 *
-		 * Refer to this for idea:
-		 * http://stackoverflow.com/questions/36578936/spark-ml-stringindexer-different-labels-training-testing?rq=1
-		 *
-		 * ii) Process into DataFrame then find a way to switch columns into Vectors so that streaming KMeans can be trained on it
-		 *
-		 * iii) Figure out how to convert output from clustering back into categorical
+		 * Process streaming messages for ML. Steps involved:
+		 * i) Extract interested features
+		 * ii) Index and vectorize them - Need to add vectorizer and indexer for other features.
+		 * iii) Run clustering algorithm on data with the features
+		 * iv) Run classification algorithm on data based on the results from clustering algo
+		 * v) Generate csv file (per minute)
+		 * vi) Generate rule file (per minute)
 		 *
 		 */
 
@@ -249,15 +250,6 @@ public class StreamHandler implements Serializable {
 					RuleGenerator ruleGenerator = new RuleGenerator();
 
 					if(clusterResults != null) {
-						//Linear Regression Simple
-//						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLinearReg = classificationProcessor.linearRegressionWithSdgSimple(clusterResults);
-//						classificationProcessor.computeMeanSquaredError(valueAndPreds);
-//						classificationProcessor.evaluateRoc(valueAndPreds);
-
-						//Linear Regression Complex
-//						JavaRDD<Tuple2<Object, Object>> valueAndPredsLinearRegComplex = classificationProcessor.linearRegressionWithSdgComplex(clusterResults);
-//						classificationProcessor.computeMeanSquaredError(valueAndPredsComplex);
-//						classificationProcessor.evaluateRoc(valueAndPredsComplex);
 
 						//Logistic Regression Simple
 						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticReg = classificationProcessor.logisticRegressionWithLgbtSimple(clusterResults);
@@ -266,6 +258,7 @@ public class StreamHandler implements Serializable {
 						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
 
 						DataFrame clusterResultsWithPrecision = clusterResults.withColumn("precision", functions.lit(metrics.get("precision")));
+						clusterResultsWithPrecision.printSchema();
 						String fileName = createRuleCsvFile(clusterResultsWithPrecision);
 
 						ruleGenerator.generateRuleFile(fileName);
@@ -315,10 +308,11 @@ public class StreamHandler implements Serializable {
 	}
 
 	private String createRuleCsvFile(DataFrame clusterResultsWithPrecision) throws IOException {
-		String fileName = "oneFeatureVerbRuleCsv--" + new SimpleDateFormat("yyyy-MM-dd--HH-mm-ss").format(new Date()) + ".csv";
+		//Collate output per minute from streaming data
+		String fileName = "oneFeatureVerbRuleCsv--" + new SimpleDateFormat("yyyy-MM-dd--HH-mm").format(new Date());
 
 		//Repartition is used to create only one csv files instead of multiple parts.
-		clusterResultsWithPrecision.select("verb", "precision").
+		clusterResultsWithPrecision.select("verb", "clusters", "precision").
 				repartition(1).
 				write().
 				format("com.databricks.spark.csv").
@@ -329,6 +323,7 @@ public class StreamHandler implements Serializable {
 
 		FileUtils.moveFile(new File(fileName + "/part-00000"), new File("src/main/resources/output/" + fileName));
 		logger.info("CSV file moving completed");
+		System.out.println("CSV file moving completed");
 		FileUtils.deleteDirectory(new File(fileName));
 
 		return fileName;
@@ -353,5 +348,7 @@ public class StreamHandler implements Serializable {
 
 		}
 	}
+
+
 
 }

@@ -307,6 +307,7 @@ public class ClassificationProcessor implements Serializable {
 					}
 				});
 
+
 		double accuracy = valuesAndPreds.filter(new Function<Tuple2<Double, Double>, Boolean>() {
 			@Override
 			public Boolean call(Tuple2<Double, Double> doubleDoubleTuple2) throws Exception {
