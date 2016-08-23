@@ -1,4 +1,4 @@
-# LogstashKafkaSparkStreamingMlibTest
+# GSoC 2016 Machine Learning Analysis Engine for AppSensor
 
 ==========================
 
