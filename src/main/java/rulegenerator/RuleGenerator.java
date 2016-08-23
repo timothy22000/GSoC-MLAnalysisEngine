@@ -1,15 +1,11 @@
 package rulegenerator;
 
 import com.clearspring.analytics.util.Lists;
-import org.apache.commons.compress.utils.IOUtils;
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
@@ -18,6 +14,7 @@ import java.util.List;
 public class RuleGenerator {
 	private static final Logger logger = LoggerFactory.getLogger(RuleGenerator.class);
 	private static final String outputFileDir = "src/main/resources/output";
+	private static double thresholdForEvaluationMetric = 0.0;
 
 	private static Comparator<List<String>> comp = new Comparator<List<String>>() {
 		public int compare(List<String> csvLine1, List<String> csvLine2) {
@@ -49,12 +46,17 @@ public class RuleGenerator {
 
 			for(List<String> csvRuleLine : csvLinesRulesSplit.subList(1, csvLinesRulesSplit.size())) {
 				String rule = "IF ";
-
+				boolean meetsThreshold = true;
 				for(int i = 0; i < csvRuleLine.size(); i++) {
 
 					if(i == csvRuleLine.size() - 2) {
 						rule += " THEN " + header.get(i) + "=" + csvRuleLine.get(i) + " -- ";
 					} else if(i == csvRuleLine.size() - 1) {
+						String evaluationMetricStr = csvRuleLine.get(i);
+						Double evaluationMetric = Double.valueOf(evaluationMetricStr);
+						if( evaluationMetric < thresholdForEvaluationMetric || Double.isNaN(evaluationMetric)) {
+							meetsThreshold = false;
+						}
 						rule += header.get(i) + "=" + csvRuleLine.get(i);
 					} else {
 						rule += header.get(i) + "=" + csvRuleLine.get(i);
@@ -68,7 +70,9 @@ public class RuleGenerator {
 
 				rule += "\n";
 				String filterRule = rule.replace("AND  THEN", "THEN");
-				FileUtils.writeStringToFile(newRuleFile, filterRule, true);
+				if(meetsThreshold) {
+					FileUtils.writeStringToFile(newRuleFile, filterRule, true);
+				}
 			}
 
 		} catch (java.io.IOException e) {

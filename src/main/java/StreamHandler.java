@@ -59,8 +59,6 @@ public class StreamHandler implements Serializable {
 
 	private static ClusteringProcessor clusteringProcessor;
 
-	private static String currentFileName;
-
 	private static Geocoder geocoder = new Geocoder("AIzaSyBRxFmYNrT6kcJqOwWSa4MMwFpcBccIMAU");
 
 	//See Google Guave's Loading Cache for more details.
@@ -112,10 +110,10 @@ public class StreamHandler implements Serializable {
 		globalLogs = logs;
 
 		classificationProcessor = new ClassificationProcessor(10, 0.000000000000001);
-		clusteringProcessor = new ClusteringProcessor(3, "features", "clusters");
+		clusteringProcessor = new ClusteringProcessor(5, "features", "clusters");
 
-		sqlContext.udf().register("geocodeCityCountryLat",  (String string) -> geocodeLat(string), DataTypes.DoubleType);
-		sqlContext.udf().register("geocodeCityCountryLng",  (String string) -> geocodeLong(string), DataTypes.DoubleType);
+//		sqlContext.udf().register("geocodeCityCountryLat",  (String string) -> geocodeLat(string), DataTypes.DoubleType);
+//		sqlContext.udf().register("geocodeCityCountryLng",  (String string) -> geocodeLong(string), DataTypes.DoubleType);
 
 		/**
 		 * Process streaming messages for ML. Steps involved:
@@ -137,17 +135,16 @@ public class StreamHandler implements Serializable {
 				//Ensure that there is entries in the table.
 				if(globalLogs.count() > 0) {
 
-
 					//Using logstash's inbuilt geocoder
 					DataFrame logsForProcessing = sqlContext.sql("SELECT geoip.city_name, geoip.latitude, geoip.longitude, verb, response, request FROM logs");
 
 					DataFrame logsForProcessingFixed = logsForProcessing.withColumn("response", globalLogs.col("response").cast(DoubleType));
 
-					//Using google geocoder for lat/long
-					DataFrame logsForProcessingLatLng =  sqlContext.sql("SELECT geocodeCityCountryLat(geoip.city_name) AS lat, geocodeCityCountryLng(geoip.city_name) AS long, geoip.latitude, geoip.longitude, verb, response, request FROM logs");
+//					//Using google geocoder for lat/long
+//					DataFrame logsForProcessingLatLng =  sqlContext.sql("SELECT geocodeCityCountryLat(geoip.city_name) AS lat, geocodeCityCountryLng(geoip.city_name) AS long, geoip.latitude, geoip.longitude, verb, response, request FROM logs");
 
-					logsForProcessingLatLng.printSchema();
-					logsForProcessingLatLng.show();
+//					logsForProcessingLatLng.printSchema();
+//					logsForProcessingLatLng.show();
 
 					DataFrame logsForProcessingRemoveNulls = logsForProcessingFixed.na().drop();
 
@@ -252,32 +249,28 @@ public class StreamHandler implements Serializable {
 					if(clusterResults != null) {
 
 						//Logistic Regression Simple
-						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticReg = classificationProcessor.logisticRegressionWithLgbtSimple(clusterResults);
-						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticReg);
-						classificationProcessor.evaluateRoc(valueAndPredsLogisticReg);
-						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
+//						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticReg = classificationProcessor.logisticRegressionWithLgbtSimple(clusterResults);
+//						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticReg);
+//						classificationProcessor.evaluateRoc(valueAndPredsLogisticReg);
+//						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
+//
+//						DataFrame clusterResultsWithPrecision = clusterResults.withColumn("precision", functions.lit(metrics.get("precision")));
+//						clusterResultsWithPrecision.printSchema();
+//						String fileName = createRuleCsvFile(clusterResultsWithPrecision);
+//
+//						ruleGenerator.generateRuleFile(fileName);
+
+						//Logistic Regression Complex
+						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticRegComplex = classificationProcessor.logisticRegressionWithLgbtComplex(clusterResults);
+						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticRegComplex);
+						classificationProcessor.evaluateRoc(valueAndPredsLogisticRegComplex);
+						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticRegComplex);
 
 						DataFrame clusterResultsWithPrecision = clusterResults.withColumn("precision", functions.lit(metrics.get("precision")));
 						clusterResultsWithPrecision.printSchema();
 						String fileName = createRuleCsvFile(clusterResultsWithPrecision);
 
 						ruleGenerator.generateRuleFile(fileName);
-
-						//Logistic Regression Complex
-//						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticRegComplex = classificationProcessor.logisticRegressionWithLgbtComplex(clusterResults);
-//						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticRegComplex);
-//						classificationProcessor.evaluateRoc(valueAndPredsLogisticRegComplex);
-//						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
-
-//						DataFrame clusterResultsWithPrecision = clusterResults.withColumn("precision", functions.lit(metrics.get("precision")));
-//						String fileName = "multiFeatureVerbRuleCsv--" + new SimpleDateFormat("yyyy-MM-dd--HH-mm-ss").format(new Date()) + ".csv";
-//						clusterResultsWithPrecision.select("response", "request", "verb", "precision").
-//								repartition(1).
-//								write().
-//								format("com.databricks.spark.csv").
-//								option("header", "true").
-//								mode(SaveMode.Overwrite).
-//								save(fileName);
 
 						//Naive Bayes Simple
 //						JavaPairRDD<Double, Double> valueAndPredsNaiveBayesSimple = classificationProcessor.naiveBayesSimple(clusterResults);
@@ -312,7 +305,7 @@ public class StreamHandler implements Serializable {
 		String fileName = "oneFeatureVerbRuleCsv--" + new SimpleDateFormat("yyyy-MM-dd--HH-mm").format(new Date());
 
 		//Repartition is used to create only one csv files instead of multiple parts.
-		clusterResultsWithPrecision.select("verb", "clusters", "precision").
+		clusterResultsWithPrecision.select("verb", "response", "requestIndex", "clusters", "precision").
 				repartition(1).
 				write().
 				format("com.databricks.spark.csv").
@@ -321,12 +314,39 @@ public class StreamHandler implements Serializable {
 				save(fileName);
 
 
-		FileUtils.moveFile(new File(fileName + "/part-00000"), new File("src/main/resources/output/" + fileName));
+		moveFile(new File(fileName + "/part-00000"), new File("src/main/resources/output/" + fileName));
 		logger.info("CSV file moving completed");
 		System.out.println("CSV file moving completed");
 		FileUtils.deleteDirectory(new File(fileName));
 
 		return fileName;
+	}
+
+	private boolean moveFile(File origfile, File destfile) {
+		boolean fileMoved = false;
+		try{
+			File newfile = new File(destfile.getParent() + File.separator + destfile.getName());
+
+			if(newfile.exists()) {
+				newfile.delete();
+			}
+			FileUtils.copyFile(origfile, destfile , true);
+
+
+			if(newfile.exists() && FileUtils.contentEqualsIgnoreEOL(origfile,newfile,"UTF-8"))
+			{
+				origfile.delete();
+				fileMoved = true;
+			}
+			else
+			{
+				System.out.println("File fail to move successfully!");
+			}
+		} catch(IOException e) {
+			logger.info(e.toString() + "Details: " + e.getMessage());
+
+		}
+		return fileMoved;
 	}
 
 	private void createDataframeFromRdd(JavaPairRDD<String, String> stringStringJavaPairRDD, SQLContext sqlContext) {

@@ -94,37 +94,6 @@ public class Main {
 
 	    messages.window(Durations.seconds(WINDOW_DURATION));
 
-	    messages.foreachRDD(new Function2<JavaPairRDD<String, String>, Time, Void>() {
-		    @Override
-		    public Void call(JavaPairRDD<String, String> stringStringJavaPairRDD, Time time) throws Exception {
-			    stringStringJavaPairRDD.values().foreach(new VoidFunction<String>() {
-				    @Override
-				    public void call(String s) throws Exception {
-					    JSONObject jsonObject = new JSONObject(s);
-					    System.out.println(jsonObject);
-					    if(!jsonObject.isNull("geoip")) {
-						    JSONObject geoIpObject = jsonObject.getJSONObject("geoip");
-						    String cityName = "";
-						    String countryName = "";
-
-						    if(geoIpObject.has("city_name")) {
-							    cityName = geoIpObject.get("city_name").toString();
-						    }
-
-						    if(geoIpObject.has("country_name")) {
-							    countryName = geoIpObject.get("country_name").toString();
-						    }
-
-						    System.out.println(cityName);
-						    geocoder.geocode(cityName + ", " + countryName);
-					    }
-
-				    }
-			    });
-			    return null;
-		    }
-	    });
-
 	    streamHandler.processStream(messages, logs, sqlContext, sc);
 
 	    javaStreamingContext.start();

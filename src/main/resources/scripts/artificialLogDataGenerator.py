@@ -55,9 +55,9 @@ otime = datetime.datetime.now()
 logName = 'verb_single_feature_access_log_'
 dest_dir = os.path.join('..', 'artificialLogs')
 
-if not anomalies:
+if anomalies == 0:
     outFileName = logName + timestr + '.log'
-else:
+elif anomalies == 1:
     outFileName = logName + timestr + '--anomaly.log'
 
 if file_prefix:

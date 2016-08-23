@@ -156,7 +156,7 @@ public class ClassificationProcessor implements Serializable {
 		JavaRDD<LabeledPoint> test = splits[1];
 
 		LogisticRegressionModel logisticRegressionModel = new LogisticRegressionWithLBFGS()
-				.setNumClasses(3)
+				.setNumClasses(5)
 				.run(training.rdd());
 
 		// Compute raw scores on the test set.
@@ -204,7 +204,7 @@ public class ClassificationProcessor implements Serializable {
 		JavaRDD<LabeledPoint> test = splits[1];
 
 		LogisticRegressionModel logisticRegressionModel = new LogisticRegressionWithLBFGS()
-				.setNumClasses(3)
+				.setNumClasses(5)
 				.run(training.rdd());
 
 		// Compute raw scores on the test set.
