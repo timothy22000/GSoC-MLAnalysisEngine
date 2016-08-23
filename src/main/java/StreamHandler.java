@@ -112,6 +112,7 @@ public class StreamHandler implements Serializable {
 		classificationProcessor = new ClassificationProcessor(10, 0.000000000000001);
 		clusteringProcessor = new ClusteringProcessor(5, "features", "clusters");
 
+		//How to register your UDF into SparkSQL
 //		sqlContext.udf().register("geocodeCityCountryLat",  (String string) -> geocodeLat(string), DataTypes.DoubleType);
 //		sqlContext.udf().register("geocodeCityCountryLng",  (String string) -> geocodeLong(string), DataTypes.DoubleType);
 
@@ -123,6 +124,8 @@ public class StreamHandler implements Serializable {
 		 * iv) Run classification algorithm on data based on the results from clustering algo
 		 * v) Generate csv file (per minute)
 		 * vi) Generate rule file (per minute)
+		 *
+		 * As of now, you have to comment/uncomment to use the ML algorithm that you want to use for processing.
 		 *
 		 */
 
