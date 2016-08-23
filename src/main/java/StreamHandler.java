@@ -222,7 +222,7 @@ public class StreamHandler implements Serializable {
 //					logsWithLatLongSingleFeature.printSchema();
 //					logsWithLatLongSingleFeature.show();
 
-					KMeansModel kmeansModel = clusteringProcessor.startKMeans(logsWithFeatures);
+					KMeansModel kmeansModel = clusteringProcessor.startKMeans(logsWithSingleFeature);
 
 					clusterResults = clusteringProcessor.getClusterResults();
 
@@ -252,29 +252,29 @@ public class StreamHandler implements Serializable {
 					if(clusterResults != null) {
 
 						//Logistic Regression Simple
-//						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticReg = classificationProcessor.logisticRegressionWithLgbtSimple(clusterResults);
-//						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticReg);
-//						classificationProcessor.evaluateRoc(valueAndPredsLogisticReg);
-//						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
-//
-//						DataFrame clusterResultsWithPrecision = clusterResults.withColumn("precision", functions.lit(metrics.get("precision")));
-//						clusterResultsWithPrecision.printSchema();
-//						String fileName = createRuleCsvFile(clusterResultsWithPrecision);
-//
-//						ruleGenerator.generateRuleFile(fileName);
-
-
-						//Logistic Regression Complex
-						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticRegComplex = classificationProcessor.logisticRegressionWithLgbtComplex(clusterResults);
-						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticRegComplex);
-						classificationProcessor.evaluateRoc(valueAndPredsLogisticRegComplex);
-						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticRegComplex);
+						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticReg = classificationProcessor.logisticRegressionWithLgbtSimple(clusterResults);
+						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticReg);
+						classificationProcessor.evaluateRoc(valueAndPredsLogisticReg);
+						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticReg);
 
 						DataFrame clusterResultsWithPrecision = clusterResults.withColumn("precision", functions.lit(metrics.get("precision")));
 						clusterResultsWithPrecision.printSchema();
 						String fileName = createRuleCsvFile(clusterResultsWithPrecision);
 
 						ruleGenerator.generateRuleFile(fileName);
+
+
+						//Logistic Regression Complex
+//						JavaRDD<Tuple2<Object, Object>>  valueAndPredsLogisticRegComplex = classificationProcessor.logisticRegressionWithLgbtComplex(clusterResults);
+//						classificationProcessor.computeMeanSquaredError(valueAndPredsLogisticRegComplex);
+//						classificationProcessor.evaluateRoc(valueAndPredsLogisticRegComplex);
+//						ConcurrentHashMap<String, Double> metrics = classificationProcessor.calculateMetricsForLogisticRegression(valueAndPredsLogisticRegComplex);
+//
+//						DataFrame clusterResultsWithPrecision = clusterResults.withColumn("precision", functions.lit(metrics.get("precision")));
+//						clusterResultsWithPrecision.printSchema();
+//						String fileName = createRuleCsvFile(clusterResultsWithPrecision);
+//
+//						ruleGenerator.generateRuleFile(fileName);
 
 						//Naive Bayes Simple
 //						JavaPairRDD<Double, Double> valueAndPredsNaiveBayesSimple = classificationProcessor.naiveBayesSimple(clusterResults);
@@ -305,7 +305,7 @@ public class StreamHandler implements Serializable {
 		String fileName = "oneFeatureVerbRuleCsv--" + new SimpleDateFormat("yyyy-MM-dd--HH-mm").format(new Date());
 
 		//Repartition is used to create only one csv files instead of multiple parts.
-		clusterResultsWithPrecision.select("verb", "response", "requestIndex", "clusters", "precision").
+		clusterResultsWithPrecision.select("verb", "clusters", "precision").
 				repartition(1).
 				write().
 				format("com.databricks.spark.csv").
