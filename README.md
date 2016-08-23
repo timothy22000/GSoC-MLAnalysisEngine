@@ -1,5 +1,6 @@
+# GSoC 2016 Machine Learning Analysis Engine Appsensor
 
-# LogstashKafkaSparkStreamingMlibTest
+==========================
 
 Note: You need Java 7 or higher, Scala 2 or higher and Gradle 2.0 or higher to run this application.
 
@@ -15,11 +16,11 @@ Install brew package manager following the steps on the main website: [Brew](htt
 
 Then run the commands (should be obvious what is being installed) :
 
-```
-brew install elasticsearch
-brew install logstash
-brew install kibana
-```
+	```
+	brew install elasticsearch
+	brew install logstash
+	brew install kibana
+	```
 
 Alternatively, you can download them from their respective websites.
 * [Elasticsearch] (https://www.elastic.co/downloads/elasticsearch)
@@ -45,7 +46,7 @@ gradle
 
 Then, build the jar and running it
 
-```./gradlew jar```  
+```./gradlew jar```
 
 A quick start on Kafka and to test your Kafka installation:
 http://kafka.apache.org/documentation.html#quickstart
@@ -59,6 +60,30 @@ Alternatively, you can download it from:
 
 Quick start on Spark and to test your Spark installation:
 http://spark.apache.org/docs/latest/quick-start.html
+
+# Artificial Server Log Script
+
+To use the artificial server log data generators in ```src/main/resources/scripts```. You need to have Python 3 installed to run the script.
+
+[Download Link] (https://www.python.org/downloads/)
+
+After that you have to download the Faker module as such
+
+```pip3 install faker```
+
+You should be good to go! More information on the Faker library and its other use-case: https://github.com/joke2k/faker/
+
+# Geocoding Implementations
+
+There are two ways that geocoding is being done in the application. The first way is using Logstash's geocoder plugin which is the most straightforward way:
+
+https://github.com/jsvd/logstash-filter-geocoder
+
+The second way is using Google's Geocoding API. You can find it in the ```geocoder``` package. Additionally to use this geocoder, you need to get an API key from Google's API console.
+
+[Get you API Key] (https://developers.google.com/maps/documentation/geocoding/get-api-key)
+
+To learn more about Google's Geocoding API: https://developers.google.com/maps/documentation/geocoding/start
 
 # Application-specific settings
 

@@ -30,6 +30,7 @@ import scala.Tuple2;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.spark.sql.types.DataTypes.DoubleType;
@@ -156,7 +157,7 @@ public class ClassificationProcessor implements Serializable {
 		JavaRDD<LabeledPoint> test = splits[1];
 
 		LogisticRegressionModel logisticRegressionModel = new LogisticRegressionWithLBFGS()
-				.setNumClasses(3)
+				.setNumClasses(5)
 				.run(training.rdd());
 
 		// Compute raw scores on the test set.
@@ -204,7 +205,7 @@ public class ClassificationProcessor implements Serializable {
 		JavaRDD<LabeledPoint> test = splits[1];
 
 		LogisticRegressionModel logisticRegressionModel = new LogisticRegressionWithLBFGS()
-				.setNumClasses(3)
+				.setNumClasses(5)
 				.run(training.rdd());
 
 		// Compute raw scores on the test set.
@@ -306,6 +307,7 @@ public class ClassificationProcessor implements Serializable {
 						return new Tuple2<>(prediction, point.label());
 					}
 				});
+
 
 		double accuracy = valuesAndPreds.filter(new Function<Tuple2<Double, Double>, Boolean>() {
 			@Override
@@ -531,14 +533,19 @@ public class ClassificationProcessor implements Serializable {
 		return roc;
 	}
 
-	public void calculateMetricsForLogisticRegression(JavaRDD<Tuple2<Object, Object>> valuesAndPreds) {
+	public ConcurrentHashMap<String, Double> calculateMetricsForLogisticRegression(JavaRDD<Tuple2<Object, Object>> valuesAndPreds) {
 		MulticlassMetrics metrics = new MulticlassMetrics(valuesAndPreds.rdd());
+		ConcurrentHashMap<String, Double> concurrentHashMap = new ConcurrentHashMap<String, Double>();
 
 		double recall = metrics.recall();
 		double precision = metrics.precision();
+		double fMeasure = metrics.fMeasure();
 
-		System.out.println("Recall = " + recall);
-		System.out.println("Precision = " + precision);
+		concurrentHashMap.put("recall", recall);
+		concurrentHashMap.put("precision", precision);
+		concurrentHashMap.put("fMeasure", fMeasure);
+
+		return concurrentHashMap;
 	}
 
 	private JavaRDD<Tuple2<Object, Object>> predictLabelOfTestDataFromLinearRegression(JavaRDD<LabeledPoint> test, final LinearRegressionModel linearRegressionModel) {
