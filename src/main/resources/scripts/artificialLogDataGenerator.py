@@ -55,7 +55,13 @@ otime = datetime.datetime.now()
 logName = 'verb_single_feature_access_log_'
 dest_dir = os.path.join('..', 'artificialLogs')
 
-outFileName = logName + timestr + '.log' if not file_prefix else file_prefix + '_' + logName + timestr + '.log'
+if not anomalies:
+    outFileName = logName + timestr + '.log'
+else:
+    outFileName = logName + timestr + '--anomaly.log'
+
+if file_prefix:
+    outFileName = file_prefix + '_' + outFileName
 
 for case in switch(output_type):
     if case('LOG'):
