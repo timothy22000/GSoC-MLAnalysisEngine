@@ -18,6 +18,8 @@
         <jmock.version>2.5.1</jmock.version>
         <mockito.version>1.9.0</mockito.version>
         <json-io.version>4.4.0</json-io.version>
+        <spark-csv.version>1.4.0</spark-csv.version>
+        <commons-io.version>2.4</commons-io.version>
 
     </properties>
 
@@ -64,6 +66,11 @@
             <version>${spark.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.databricks</groupId>
+            <artifactId>spark-csv_2.10</artifactId>
+            <version>${spark-csv.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.jmock</groupId>
             <artifactId>jmock-junit4</artifactId>
             <version>${jmock.version}</version>
@@ -73,6 +80,11 @@
             <artifactId>mockito-all</artifactId>
             <version>${mockito.version}</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>${commons-io.version}</version>
         </dependency>
     </dependencies>
 

@@ -125,7 +125,7 @@ public class Main {
 		    }
 	    });
 
-//	    streamHandler.processStream(messages, logs, sqlContext);
+	    streamHandler.processStream(messages, logs, sqlContext, sc);
 
 	    javaStreamingContext.start();
         javaStreamingContext.awaitTermination();
